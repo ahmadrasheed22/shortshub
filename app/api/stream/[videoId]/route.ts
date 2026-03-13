@@ -13,27 +13,21 @@ export async function GET(
     }
 
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    
+    // Get video info first to check if it exists
     const info = await ytdl.getInfo(videoUrl);
     
-    // Clean title for filename (remove special characters)
-    const title = info.videoDetails.title
-      .replace(/[^\w\s-]/g, '')
-      .trim()
-      .substring(0, 50);
-    
-    const filename = `${title}-${videoId}.mp4`;
-
-    // Get best format with both video and audio
+    // Get the best format (prioritize 720p or 360p for Shorts)
     const format = ytdl.chooseFormat(info.formats, { 
       quality: 'highestvideo',
-      filter: 'videoandaudio'
+      filter: format => format.hasVideo && format.hasAudio 
     });
 
     if (!format) {
-        return NextResponse.json({ error: 'No suitable format found' }, { status: 404 });
+      return NextResponse.json({ error: 'No suitable format found' }, { status: 404 });
     }
 
-    // Create video stream
+    // Stream the video
     const videoStream = ytdl(videoUrl, { 
       format: format,
       requestOptions: {
@@ -43,6 +37,7 @@ export async function GET(
       }
     });
 
+    // Create a readable stream for Next.js
     const stream = new ReadableStream({
       start(controller) {
         videoStream.on('data', (chunk) => {
@@ -63,16 +58,15 @@ export async function GET(
     return new Response(stream, {
       headers: {
         'Content-Type': 'video/mp4',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Cache-Control': 'public, max-age=3600',
         'Access-Control-Allow-Origin': '*',
-        'Cache-Control': 'no-cache',
       },
     });
 
   } catch (error) {
-    console.error('Download error:', error);
+    console.error('Stream error:', error);
     return NextResponse.json({ 
-      error: 'Failed to download video',
+      error: 'Failed to stream video',
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }

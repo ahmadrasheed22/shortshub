@@ -1,10 +1,10 @@
 'use client';
 
-import { Play, Download, Share2, Eye, Clock } from 'lucide-react';
+import { Play, Download, Share2, Eye, Clock, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 interface ShortCardProps {
   video: any;
@@ -13,9 +13,15 @@ interface ShortCardProps {
 }
 
 export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
+  const [downloading, setDownloading] = useState(false);
   const { id, snippet, statistics } = video;
   const videoId = typeof id === 'string' ? id : id.videoId;
-  const thumbnail = snippet.thumbnails.maxres?.url || snippet.thumbnails.high?.url || snippet.thumbnails.medium?.url;
+  
+  // YouTube thumbnail fallback sequence
+  const thumbnail = snippet.thumbnails.maxres?.url || 
+                    snippet.thumbnails.high?.url || 
+                    snippet.thumbnails.medium?.url ||
+                    `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
   
   const views = parseInt(statistics?.viewCount || '0');
   const formattedViews = views >= 1000000 
@@ -26,22 +32,43 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
 
   const publishedAt = new Date(snippet.publishedAt);
   
-  const handleDownload = (e: React.MouseEvent) => {
+  const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    window.location.href = `/api/download/${videoId}`;
+    try {
+      setDownloading(true);
+      
+      // Trigger download via hidden link to ensure it's handled as an attachment
+      const link = document.createElement('a');
+      link.href = `/api/download/${videoId}`;
+      // Filename is set by the server via Content-Disposition, 
+      // but we provide a fallback for simple browsers
+      link.setAttribute('download', `${snippet.title}.mp4`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log(`Download started for: ${videoId}`);
+    } catch (error) {
+      console.error('Download failed:', error);
+      alert('Download failed. Technical details: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    } finally {
+      // Keep state for a moment to show completion
+      setTimeout(() => setDownloading(false), 2000);
+    }
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/api/download/${videoId}`;
+    const url = `${window.location.origin}/c/${snippet.channelId}`; // Share the channel feed
     if (navigator.share) {
       navigator.share({
         title: snippet.title,
+        text: `Watch and download this YouTube Short: ${snippet.title}`,
         url: url
       });
     } else {
       navigator.clipboard.writeText(url);
-      alert('Download link copied to clipboard!');
+      alert('Link copied to clipboard!');
     }
   };
 
@@ -51,7 +78,7 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
       animate={{ opacity: 1, y: 0, scale: 1 }}
       className="group relative flex flex-col bg-zinc-900/50 rounded-2xl overflow-hidden border border-white/5 hover:border-white/10 transition-all duration-300 shadow-xl"
     >
-      {/* Thumbnail */}
+      {/* Thumbnail / Play Zone */}
       <div 
         className="relative aspect-[9/16] cursor-pointer overflow-hidden"
         onClick={() => onPlay(videoId)}
@@ -60,6 +87,7 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
           src={thumbnail}
           alt={snippet.title}
           fill
+          unoptimized={true}
           className="object-cover group-hover:scale-105 transition-transform duration-500"
         />
         
@@ -76,7 +104,7 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
 
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
           <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 scale-75 group-hover:scale-100 transition-transform">
-            <Play className="text-white fill-white" size={32} />
+            <Play className="text-white fill-white ml-1" size={32} />
           </div>
         </div>
 
@@ -102,10 +130,24 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
         <div className="flex gap-2">
           <button
             onClick={handleDownload}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg shadow-blue-900/20"
+            disabled={downloading}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg ${
+              downloading 
+              ? 'bg-zinc-800 text-white/50 cursor-not-allowed' 
+              : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20'
+            }`}
           >
-            <Download size={14} />
-            DOWNLOAD
+            {downloading ? (
+              <>
+                <Loader2 size={14} className="animate-spin" />
+                PREPARING...
+              </>
+            ) : (
+              <>
+                <Download size={14} />
+                DOWNLOAD
+              </>
+            )}
           </button>
           <button
             onClick={handleShare}

@@ -4,9 +4,9 @@ import { Readable } from 'stream';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { videoId: string } }
+  { params }: { params: Promise<{ videoId: string }> }
 ) {
-  const { videoId } = params;
+  const { videoId } = await params;
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
 
   try {

@@ -5,11 +5,12 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 interface PageProps {
-  params: { id: string };
+  params: Promise<{ id: string }>;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const channelId = params.id;
+  const { id } = await params;
+  const channelId = id;
   try {
     const channel = await resolveChannel(channelId);
     if (!channel) return { title: 'Channel Not Found' };
@@ -27,7 +28,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function ChannelPage({ params }: PageProps) {
-  const channelId = params.id;
+  const { id } = await params;
+  const channelId = id;
   const channel = await resolveChannel(channelId);
 
   if (!channel) {

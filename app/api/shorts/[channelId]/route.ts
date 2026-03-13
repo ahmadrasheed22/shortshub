@@ -3,9 +3,9 @@ import { getShorts } from '@/lib/youtube';
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { channelId: string } }
+  { params }: { params: Promise<{ channelId: string }> }
 ) {
-  const { channelId } = params;
+  const { channelId } = await params;
   const { searchParams } = new URL(req.url);
   const after = searchParams.get('after') || undefined;
   const pageToken = searchParams.get('pageToken') || undefined;

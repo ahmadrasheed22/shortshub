@@ -1,0 +1,16 @@
+{
+  "name": "ShortsHub Pro",
+  "short_name": "ShortsHub",
+  "description": "Premium YouTube Shorts Tracker & Downloader",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050505",
+  "theme_color": "#3b82f6",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

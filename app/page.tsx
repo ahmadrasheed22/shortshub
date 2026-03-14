@@ -1,44 +1,70 @@
+'use client';
+
 import SearchBar from '@/components/SearchBar';
 import { Youtube } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 export default function Home() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-[radial-gradient(circle_at_top,_var(--tw-gradient-stops))] from-blue-900/20 via-black to-black">
-      <div className="w-full max-w-4xl text-center space-y-8">
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 border border-red-500/20 text-red-500 animate-bounce">
-          <Youtube size={20} />
-          <span className="text-sm font-semibold uppercase tracking-wider">ShortsHub Engine</span>
-        </div>
-        
-        <h1 className="text-5xl md:text-7xl font-bold tracking-tight">
-          Track & Download <br />
-          <span className="gradient-text">YouTube Shorts</span>
-        </h1>
-        
-        <p className="text-lg text-white/60 max-w-xl mx-auto">
-          The ultimate real-time shorts detector. Enter any channel to start tracking new uploads instantly.
-        </p>
+    <main className="min-h-screen flex flex-col items-center justify-center p-6 bg-black relative overflow-hidden">
+      {/* Subtle Ambient Background */}
+      <div className="absolute top-0 left-1/2 -track-x-1/2 w-full max-w-4xl h-[500px] bg-blue-600/5 blur-[120px] rounded-full pointer-events-none" />
+      
+      <div className="w-full max-w-3xl text-center space-y-12 relative z-10">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6 }}
+          className="space-y-6"
+        >
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.03] border border-white/[0.08] text-white/40 mb-4">
+            <Youtube size={16} />
+            <span className="text-[10px] uppercase tracking-[0.2em] font-bold">ShortsHub v2.0</span>
+          </div>
+          
+          <h1 className="text-4xl md:text-6xl font-bold tracking-tight text-white">
+            Track YouTube Shorts <br />
+            <span className="opacity-40">With Precision.</span>
+          </h1>
+          
+          <p className="text-sm md:text-base text-white/40 max-w-md mx-auto leading-relaxed">
+            The professional tool for tracking real-time uploads. 
+            Paste a channel link or @handle to begin.
+          </p>
+        </motion.div>
 
-        <div className="pt-8">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.2, duration: 0.6 }}
+          className="pt-4"
+        >
           <SearchBar />
-        </div>
+        </motion.div>
 
-        <div className="pt-12 grid grid-cols-1 md:grid-cols-3 gap-6 text-left">
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 0.4 }}
+          transition={{ delay: 0.8 }}
+          className="pt-20 grid grid-cols-1 md:grid-cols-3 gap-8 text-center"
+        >
           {[
-            { title: 'Real-time Detection', desc: 'New shorts appear in 3-10s without refresh.' },
-            { title: 'Direct Download', desc: 'Highest quality MP4 files straight to your device.' },
-            { title: 'Responsive Feed', desc: 'Optimized for mobile viewing and management.' }
+            { title: 'Real-time', desc: 'No-refresh polling engine' },
+            { title: 'Clean', desc: 'Minimalistic Inter UI' },
+            { title: 'Fast', desc: 'Direct stream pipeline' }
           ].map((feature, i) => (
-            <div key={i} className="glass p-6 rounded-2xl space-y-2 hover:border-white/20 transition-all">
-              <h3 className="font-semibold text-white/90">{feature.title}</h3>
-              <p className="text-sm text-white/40">{feature.desc}</p>
+            <div key={i} className="space-y-1">
+              <h3 className="text-[11px] font-bold uppercase tracking-widest text-white/60">{feature.title}</h3>
+              <p className="text-[10px] text-white/30">{feature.desc}</p>
             </div>
           ))}
-        </div>
+        </motion.div>
       </div>
       
-      <footer className="fixed bottom-8 text-white/20 text-xs tracking-widest uppercase">
-        Built for Production • Powered by Next.js 14
+      <footer className="absolute bottom-8 left-0 right-0 text-center">
+        <span className="text-white/10 text-[9px] tracking-[0.3em] uppercase font-bold">
+          ShortsHub Engineering • 2026
+        </span>
       </footer>
     </main>
   );

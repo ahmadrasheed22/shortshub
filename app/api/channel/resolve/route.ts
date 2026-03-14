@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveChannel } from '@/lib/youtube';
+import { handleApiError } from '@/lib/errors';
 
+/**
+ * API route to resolve a YouTube channel from a query (handle, ID, URL, or name).
+ * Proper error handling with sanitization for quota limits and HTML tags.
+ */
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q');
@@ -16,8 +21,9 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json(channel);
-  } catch (error: any) {
-    console.error('Resolve Error:', error);
-    return NextResponse.json({ error: error.message || 'Failed to resolve channel' }, { status: 500 });
+  } catch (error) {
+    const message = handleApiError(error);
+    console.error('Channel Resolve API Error:', message);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

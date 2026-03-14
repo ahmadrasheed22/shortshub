@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Loader2 } from 'lucide-react';
-import axios from 'axios';
+import { Search, Loader2, ArrowRight } from 'lucide-react';
+import axios, { AxiosError } from 'axios';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function SearchBar() {
   const [query, setQuery] = useState('');
@@ -19,45 +20,71 @@ export default function SearchBar() {
     setError('');
 
     try {
+      // First resolve to check if it exists and get clean ID
       const { data } = await axios.get(`/api/channel/resolve?q=${encodeURIComponent(query)}`);
-      
+
       if (data.id) {
-        // Use the channel ID as the primary identifier
         router.push(`/c/${data.id}`);
       } else {
-        setError('Could not resolve channel. Try a full URL or ID.');
+        setError('Channel not found. Try a full URL.');
       }
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to resolve channel. Please check your API key.');
-    } finally {
+    } catch (err) {
+      if (axios.isAxiosError(err)) {
+        const axiosError = err as AxiosError<{ error?: string }>;
+        setError(axiosError.response?.data?.error || 'Failed to resolve. Check your API key.');
+      } else {
+        setError('Something went wrong. Please try again.');
+      }
       setLoading(false);
     }
   };
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
+    <div className="w-full max-w-xl mx-auto space-y-4">
       <form onSubmit={handleSearch} className="relative group">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Enter YouTube @handle, channel name, channel ID or URL (e.g. @MrBeast, UCX6OQ3DkcsbYNE6H8uQQuVA, https://youtube.com/@mrbeast)"
-          className="w-full px-6 py-4 pl-14 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all duration-300 group-hover:bg-white/10"
-        />
-        <div className="absolute left-5 top-1/2 -translate-y-1/2 text-white/40 group-focus-within:text-blue-400 transition-colors">
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+        <div className="absolute inset-0 bg-blue-500/10 blur-2xl group-focus-within:bg-blue-500/20 transition-all duration-500 rounded-full" />
+
+        <div className="relative flex items-center bg-white/[0.03] border border-white/[0.08] group-focus-within:border-white/[0.15] group-focus-within:bg-white/[0.05] rounded-2xl transition-all duration-300 backdrop-blur-md overflow-hidden search-shadow">
+          <div className="pl-6 text-white/20 group-focus-within:text-blue-400 transition-colors">
+            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Search className="w-5 h-5" />}
+          </div>
+
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search channel name, @handle or URL..."
+            className="w-full px-5 py-5 bg-transparent text-white placeholder-white/20 focus:outline-none text-sm md:text-base font-medium"
+            disabled={loading}
+          />
+
+          <div className="pr-3">
+            <button
+              type="submit"
+              disabled={loading || !query.trim()}
+              className="px-5 py-2.5 bg-white text-black hover:bg-zinc-200 disabled:bg-white/10 disabled:text-white/20 text-xs font-bold uppercase tracking-widest rounded-xl transition-all flex items-center gap-2 active:scale-95"
+            >
+              {loading ? 'Searching' : 'Go'}
+              {!loading && <ArrowRight size={14} />}
+            </button>
+          </div>
         </div>
-        <button
-          type="submit"
-          disabled={loading || !query.trim()}
-          className="absolute right-3 top-1/2 -translate-y-1/2 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:opacity-50 text-white font-medium rounded-xl transition-all"
-        >
-          {loading ? 'Searching...' : 'Go'}
-        </button>
       </form>
-      {error && (
-        <p className="mt-3 text-red-400 text-sm text-center animate-pulse">{error}</p>
-      )}
+
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex justify-center"
+          >
+            <p className="text-red-400 text-[11px] font-bold uppercase tracking-wider bg-red-400/10 px-4 py-2 rounded-full border border-red-400/20">
+              {error}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

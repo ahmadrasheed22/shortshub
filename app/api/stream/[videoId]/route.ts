@@ -1,43 +1,50 @@
 import ytdl from '@distube/ytdl-core';
 import { NextRequest, NextResponse } from 'next/server';
+import { handleApiError } from '@/lib/errors';
 
+/**
+ * API route to stream a YouTube video.
+ * Uses @distube/ytdl-core for bypass.
+ * Provides necessary headers for video seeking and browser compatibility.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ videoId: string }> }
 ) {
+  const { videoId } = await params;
+
   try {
-    const { videoId } = await params;
-    
     if (!videoId || !ytdl.validateID(videoId)) {
       return NextResponse.json({ error: 'Invalid video ID' }, { status: 400 });
     }
 
     const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
-    
-    // Get video info first to check if it exists
-    const info = await ytdl.getInfo(videoUrl);
-    
-    // Get the best format (prioritize 720p or 360p for Shorts)
-    const format = ytdl.chooseFormat(info.formats, { 
-      quality: 'highestvideo',
-      filter: format => format.hasVideo && format.hasAudio 
-    });
 
-    if (!format) {
-      return NextResponse.json({ error: 'No suitable format found' }, { status: 404 });
-    }
-
-    // Stream the video
-    const videoStream = ytdl(videoUrl, { 
-      format: format,
+    // Get info with updated headers
+    const info = await ytdl.getInfo(videoUrl, {
       requestOptions: {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'en-US,en;q=0.9',
         }
       }
     });
 
-    // Create a readable stream for Next.js
+    // Select best muxed format
+    const format = ytdl.chooseFormat(info.formats, {
+      quality: 'highestvideo',
+      filter: (f) => f.hasVideo && f.hasAudio && f.container === 'mp4'
+    }) || ytdl.chooseFormat(info.formats, {
+      quality: 'highestvideo',
+      filter: (f) => f.hasVideo && f.hasAudio
+    });
+
+    if (!format) {
+      return NextResponse.json({ error: 'No suitable streaming format found' }, { status: 404 });
+    }
+
+    const videoStream = ytdl(videoUrl, { format });
+
     const stream = new ReadableStream({
       start(controller) {
         videoStream.on('data', (chunk) => {
@@ -46,8 +53,9 @@ export async function GET(
         videoStream.on('end', () => {
           controller.close();
         });
-        videoStream.on('error', (error) => {
-          controller.error(error);
+        videoStream.on('error', (err) => {
+          console.error('Stream playback error:', err);
+          controller.error(err);
         });
       },
       cancel() {
@@ -57,17 +65,22 @@ export async function GET(
 
     return new Response(stream, {
       headers: {
-        'Content-Type': 'video/mp4',
+        'Content-Type': format.mimeType?.split(';')[0] || 'video/mp4',
+        'Content-Length': format.contentLength || '',
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600',
         'Access-Control-Allow-Origin': '*',
       },
     });
 
   } catch (error) {
-    console.error('Stream error:', error);
-    return NextResponse.json({ 
-      error: 'Failed to stream video',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 });
+    const message = handleApiError(error);
+    console.error(`Stream API Error [${videoId}]:`, message);
+
+    if (message.includes('quota') || message.includes('Forbidden') || message.includes('403')) {
+      return NextResponse.json({ error: 'YouTube restricted access to this video stream.' }, { status: 403 });
+    }
+
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -4,10 +4,11 @@ import { Play, Download, Share2, Eye, Clock, Loader2 } from 'lucide-react';
 import Image from 'next/image';
 import { formatDistanceToNow } from 'date-fns';
 import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
+import { YouTubeVideo } from '@/lib/types';
 
 interface ShortCardProps {
-  video: any;
+  video: YouTubeVideo;
   onPlay: (videoId: string) => void;
   isNew?: boolean;
 }
@@ -15,9 +16,9 @@ interface ShortCardProps {
 export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
   const [downloading, setDownloading] = useState(false);
   const { id, snippet, statistics } = video;
+  
   const videoId = typeof id === 'string' ? id : id.videoId;
   
-  // YouTube thumbnail fallback sequence
   const thumbnail = snippet.thumbnails.maxres?.url || 
                     snippet.thumbnails.high?.url || 
                     snippet.thumbnails.medium?.url ||
@@ -30,55 +31,51 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
       ? (views / 1000).toFixed(1) + 'K' 
       : views;
 
-  const publishedAt = new Date(snippet.publishedAt);
+  const publishedAt = snippet.publishedAt ? new Date(snippet.publishedAt) : new Date();
   
   const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
     try {
       setDownloading(true);
       
-      // Trigger download via hidden link to ensure it's handled as an attachment
       const link = document.createElement('a');
       link.href = `/api/download/${videoId}`;
-      // Filename is set by the server via Content-Disposition, 
-      // but we provide a fallback for simple browsers
       link.setAttribute('download', `${snippet.title}.mp4`);
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      console.log(`Download started for: ${videoId}`);
     } catch (error) {
-      console.error('Download failed:', error);
-      alert('Download failed. Technical details: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('Download initiation failed:', error);
+      alert('Could not start download. Please try again.');
     } finally {
-      // Keep state for a moment to show completion
-      setTimeout(() => setDownloading(false), 2000);
+      setTimeout(() => setDownloading(false), 3000);
     }
   };
 
   const handleShare = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const url = `${window.location.origin}/c/${snippet.channelId}`; // Share the channel feed
+    const url = `https://www.youtube.com/shorts/${videoId}`;
     if (navigator.share) {
       navigator.share({
         title: snippet.title,
-        text: `Watch and download this YouTube Short: ${snippet.title}`,
         url: url
-      });
+      }).catch(() => null);
     } else {
       navigator.clipboard.writeText(url);
-      alert('Link copied to clipboard!');
+      alert('Link copied to clipboard');
     }
   };
 
   return (
     <motion.div 
-      initial={isNew ? { opacity: 0, y: -20, scale: 0.95 } : false}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      className="group relative flex flex-col bg-zinc-900/50 rounded-2xl overflow-hidden border border-white/5 hover:border-white/10 transition-all duration-300 shadow-xl"
+      layout
+      initial={{ opacity: 0, y: 30 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.4, ease: "easeOut" }}
+      className="group relative flex flex-col bg-white/[0.02] rounded-[32px] overflow-hidden border border-white/[0.06] hover:border-white/[0.12] transition-all duration-500 hover:shadow-2xl hover:shadow-blue-500/5"
     >
-      {/* Thumbnail / Play Zone */}
+      {/* Thumbnail Area */}
       <div 
         className="relative aspect-[9/16] cursor-pointer overflow-hidden"
         onClick={() => onPlay(videoId)}
@@ -88,74 +85,74 @@ export default function ShortCard({ video, onPlay, isNew }: ShortCardProps) {
           alt={snippet.title}
           fill
           unoptimized={true}
-          className="object-cover group-hover:scale-105 transition-transform duration-500"
+          className="object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
         />
         
         {/* Overlays */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-100 transition-opacity duration-500" />
         
-        {isNew && (
-          <div className="absolute top-4 left-4 z-10">
-            <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-md shadow-lg uppercase tracking-widest animate-pulse">
-              New
-            </span>
-          </div>
-        )}
+        <AnimatePresence>
+          {isNew && (
+            <motion.div 
+              initial={{ x: -20, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              className="absolute top-6 left-6 z-20"
+            >
+              <div className="flex items-center gap-2 bg-blue-600/90 backdrop-blur-md text-white text-[9px] font-black px-3 py-1.5 rounded-full shadow-lg uppercase tracking-[0.2em] animate-pulse">
+                <span className="w-1 h-1 bg-white rounded-full" />
+                Live New
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <div className="w-16 h-16 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30 scale-75 group-hover:scale-100 transition-transform">
-            <Play className="text-white fill-white ml-1" size={32} />
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all duration-500 scale-90 group-hover:scale-100">
+          <div className="w-14 h-14 bg-white/10 backdrop-blur-xl rounded-full flex items-center justify-center border border-white/20">
+            <Play className="text-white fill-white ml-1" size={24} />
           </div>
         </div>
 
-        {/* View Count Overlay */}
-        <div className="absolute bottom-4 left-4 flex items-center gap-1.5 text-xs font-medium text-white shadow-sm">
-          <Eye size={14} />
-          <span>{formattedViews} views</span>
+        {/* Info Overlay */}
+        <div className="absolute bottom-6 left-6 right-6 flex flex-col gap-1 pointer-events-none">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold text-white/50 bg-black/20 backdrop-blur-md w-fit px-2 py-1 rounded-md">
+            <Eye size={12} />
+            <span>{formattedViews}</span>
+          </div>
+          <h3 className="font-bold text-base line-clamp-2 leading-tight text-white group-hover:text-blue-400 transition-colors duration-300">
+            {snippet.title}
+          </h3>
         </div>
       </div>
 
-      {/* Info */}
-      <div className="p-4 space-y-4">
-        <div className="space-y-1">
-          <h3 className="font-semibold text-sm line-clamp-2 leading-tight text-white/90 group-hover:text-white transition-colors">
-            {snippet.title}
-          </h3>
-          <p className="text-[11px] text-white/40 flex items-center gap-1">
-            <Clock size={10} />
-            {formatDistanceToNow(publishedAt, { addSuffix: true })}
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={handleDownload}
-            disabled={downloading}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all active:scale-95 shadow-lg ${
-              downloading 
-              ? 'bg-zinc-800 text-white/50 cursor-not-allowed' 
-              : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20'
-            }`}
-          >
-            {downloading ? (
-              <>
-                <Loader2 size={14} className="animate-spin" />
-                PREPARING...
-              </>
-            ) : (
-              <>
-                <Download size={14} />
-                DOWNLOAD
-              </>
-            )}
-          </button>
-          <button
-            onClick={handleShare}
-            className="w-11 flex items-center justify-center bg-white/5 hover:bg-white/10 text-white rounded-xl transition-all active:scale-95 border border-white/5"
-          >
-            <Share2 size={16} />
-          </button>
-        </div>
+      {/* Action Bar */}
+      <div className="px-6 py-6 flex items-center gap-3">
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className={`flex-1 relative flex items-center justify-center gap-2 h-12 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 ${
+            downloading 
+            ? 'bg-white/5 text-white/20 cursor-not-allowed' 
+            : 'bg-white text-black hover:bg-zinc-200'
+          }`}
+        >
+          {downloading ? (
+            <>
+              <Loader2 size={14} className="animate-spin" />
+              Processing
+            </>
+          ) : (
+            <>
+              <Download size={14} />
+              Get Video
+            </>
+          )}
+        </button>
+        <button
+          onClick={handleShare}
+          className="w-12 h-12 flex items-center justify-center bg-white/[0.04] hover:bg-white/[0.08] text-white/60 hover:text-white rounded-2xl transition-all active:scale-95 border border-white/[0.05]"
+        >
+          <Share2 size={16} />
+        </button>
       </div>
     </motion.div>
   );

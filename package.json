@@ -1,36 +1,15 @@
 {
   "name": "shortshub",
-  "version": "0.1.0",
-  "private": true,
+  "version": "2.0.0",
+  "description": "Professional YouTube Shorts Tracker — track, watch, and download Shorts",
+  "main": "server.js",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
-    "@distube/ytdl-core": "^4.16.12",
-    "axios": "^1.13.6",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.1.0",
-    "framer-motion": "^12.36.0",
-    "googleapis": "^171.4.0",
-    "lucide-react": "^0.577.0",
-    "next": "16.1.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "react-intersection-observer": "^10.0.3",
-    "swr": "^2.4.1",
-    "tailwind-merge": "^3.5.0"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
-    "typescript": "^5"
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2"
   }
 }

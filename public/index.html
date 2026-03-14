@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShortsHub — YouTube Shorts Tracker</title>
+  <meta name="description" content="Track, watch, and download YouTube Shorts from any channel in real-time.">
+  <meta name="theme-color" content="#0a0a0a">
+  <link rel="icon" href="/icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+
+  <!-- ═══════════════ Toast Container ═══════════════ -->
+  <div id="toast-container"></div>
+
+  <!-- ═══════════════ Loading Overlay ═══════════════ -->
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+    <p>Searching channel...</p>
+  </div>
+
+  <!-- ═══════════════ Search Section (Landing) ═══════════════ -->
+  <section id="search-section">
+    <div class="search-wrapper">
+      <div class="brand">
+        <div class="brand-badge">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <span>ShortsHub v2.0</span>
+        </div>
+        <h1>Track YouTube Shorts<br><span class="muted">With Precision.</span></h1>
+        <p class="subtitle">Paste a channel link, @handle, or name to begin.</p>
+      </div>
+      <form id="search-form">
+        <div class="search-bar">
+          <svg class="search-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="text" id="search-input" placeholder="Search channel name, @handle or paste URL..." autocomplete="off" spellcheck="false">
+          <button type="submit" id="search-btn">
+            <span class="btn-text">Go</span>
+            <svg class="btn-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </button>
+        </div>
+      </form>
+      <div id="search-error" class="error-pill hidden"></div>
+      <div class="features-row">
+        <div class="feature"><span class="feature-title">Real-time</span><span class="feature-desc">30s polling engine</span></div>
+        <div class="feature"><span class="feature-title">Clean</span><span class="feature-desc">Minimalistic UI</span></div>
+        <div class="feature"><span class="feature-title">Download</span><span class="feature-desc">yt-dlp powered</span></div>
+      </div>
+    </div>
+    <footer class="landing-footer">ShortsHub Engineering · 2026</footer>
+  </section>
+
+  <!-- ═══════════════ Channel Section ═══════════════ -->
+  <section id="channel-section" class="hidden">
+    <!-- Banner -->
+    <div id="channel-banner">
+      <div class="banner-gradient"></div>
+      <button id="back-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        Back
+      </button>
+    </div>
+
+    <!-- Channel Info -->
+    <div class="channel-info">
+      <img id="channel-avatar" alt="Channel avatar">
+      <div class="channel-details">
+        <h2 id="channel-name"></h2>
+        <p id="channel-handle" class="handle"></p>
+        <div class="channel-stats">
+          <span id="channel-subs"></span>
+          <span class="stat-sep">·</span>
+          <span id="channel-vids"></span>
+        </div>
+        <p id="channel-desc" class="channel-description"></p>
+      </div>
+    </div>
+
+    <!-- Shorts Header -->
+    <div class="shorts-header">
+      <div class="shorts-header-left">
+        <h3>Latest Shorts</h3>
+        <span id="shorts-count" class="shorts-count-badge hidden">0</span>
+      </div>
+      <div class="polling-indicator">
+        <span class="pulse-dot"><span class="pulse-ring"></span><span class="pulse-core"></span></span>
+        <span>Live Monitoring</span>
+      </div>
+    </div>
+
+    <!-- Shorts Grid -->
+    <div id="shorts-grid"></div>
+
+    <!-- Empty State -->
+    <div id="shorts-empty" class="empty-state hidden">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <p class="empty-title">No Shorts Found</p>
+      <p class="empty-desc">This channel hasn't uploaded any Shorts yet.</p>
+    </div>
+
+    <!-- Scroll Sentinel (infinite scroll trigger) -->
+    <div id="scroll-sentinel"></div>
+
+    <!-- Load More Spinner -->
+    <div id="load-more-spinner" class="hidden">
+      <div class="spinner small"></div>
+      <span>Loading more...</span>
+    </div>
+  </section>
+
+  <!-- ═══════════════ Video Modal ═══════════════ -->
+  <div id="video-modal" class="hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-container">
+      <div class="modal-controls">
+        <button id="modal-download-btn" title="Download this Short">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button id="modal-close-btn" title="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div id="modal-player"></div>
+    </div>
+  </div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

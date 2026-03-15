@@ -376,9 +376,9 @@ function openPlayer(videoId, title) {
     document.getElementById('modal-likes-count').textContent = likes;
   }
 
-  // Use official YouTube embed URL — never raw stream URLs
+  // Use official YouTube embed URL — include parameters for high quality
   modalPlayer.innerHTML = `<iframe
-    src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&rel=0&modestbranding=1"
+    src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&rel=0&modestbranding=1&vq=hd1080"
     allow="autoplay; encrypted-media; picture-in-picture"
     allowfullscreen
   ></iframe>`;

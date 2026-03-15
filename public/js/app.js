@@ -384,14 +384,6 @@ function openPlayer(videoId, title) {
   ></iframe>`;
   videoModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
-
-  // Animate progress bar (fake for now to show separation)
-  const pFill = document.querySelector('.progress-fill');
-  if (pFill) {
-    pFill.style.width = '0%';
-    setTimeout(() => pFill.style.width = '100%', 100);
-    pFill.style.transition = 'width 60s linear'; // Approximate a short video play time
-  }
 }
 
 function closePlayer() {

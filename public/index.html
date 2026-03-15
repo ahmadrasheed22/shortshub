@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ShortsHub — YouTube Shorts Tracker</title>
   <meta name="description" content="Track, watch, and download YouTube Shorts from any channel in real-time.">
-  <meta name="theme-color" content="#0a0a0a">
+  <meta name="theme-color" content="#0A0A0F">
   <link rel="icon" href="/icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
@@ -25,13 +25,14 @@
 
   <!-- ═══════════════ Search Section (Landing) ═══════════════ -->
   <section id="search-section">
+    <div class="hero-glow"></div>
     <div class="search-wrapper">
       <div class="brand">
         <div class="brand-badge">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
           <span>ShortsHub v2.0</span>
         </div>
-        <h1>Track YouTube Shorts<br><span class="muted">With Precision.</span></h1>
+        <h1 class="hero-headline">Track YouTube Shorts<br><span>With Precision.</span></h1>
         <p class="subtitle">Paste a channel link, @handle, or name to begin.</p>
       </div>
       <form id="search-form">
@@ -46,9 +47,18 @@
       </form>
       <div id="search-error" class="error-pill hidden"></div>
       <div class="features-row">
-        <div class="feature"><span class="feature-title">Real-time</span><span class="feature-desc">30s polling engine</span></div>
-        <div class="feature"><span class="feature-title">Clean</span><span class="feature-desc">Minimalistic UI</span></div>
-        <div class="feature"><span class="feature-title">Download</span><span class="feature-desc">yt-dlp powered</span></div>
+        <div class="feature-chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>Real-time</span>
+        </div>
+        <div class="feature-chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+          <span>Clean</span>
+        </div>
+        <div class="feature-chip">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Download</span>
+        </div>
       </div>
     </div>
     <footer class="landing-footer">ShortsHub Engineering · 2026</footer>
@@ -72,9 +82,8 @@
         <h2 id="channel-name"></h2>
         <p id="channel-handle" class="handle"></p>
         <div class="channel-stats">
-          <span id="channel-subs"></span>
-          <span class="stat-sep">·</span>
-          <span id="channel-vids"></span>
+          <span id="channel-subs" class="stats-pill"></span>
+          <span id="channel-vids" class="stats-pill"></span>
         </div>
         <p id="channel-desc" class="channel-description"></p>
       </div>
@@ -87,7 +96,7 @@
         <span id="shorts-count" class="shorts-count-badge hidden">0</span>
       </div>
       <div class="polling-indicator">
-        <span class="pulse-dot"><span class="pulse-ring"></span><span class="pulse-core"></span></span>
+        <span class="blink-dot"></span>
         <span>Live Monitoring</span>
       </div>
     </div>
@@ -97,7 +106,7 @@
 
     <!-- Empty State -->
     <div id="shorts-empty" class="empty-state hidden">
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <div class="empty-icon">📭</div>
       <p class="empty-title">No Shorts Found</p>
       <p class="empty-desc">This channel hasn't uploaded any Shorts yet.</p>
     </div>

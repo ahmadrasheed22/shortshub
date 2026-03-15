@@ -19,6 +19,7 @@ const state = {
   isLoading: false,
   isLoadingMore: false,
   pollingTimer: null,
+  statsTimer: null,
   activeVideoId: null,
   activeVideoTitle: '',
 };
@@ -94,6 +95,9 @@ async function searchChannel(query) {
     await fetchShorts(data.id);
     startPolling(data.id);
     ShortsNotifier.init();
+
+    // Push channel to URL so refresh restores this page
+    history.pushState({ channelId: data.id, channelQuery: query }, '', `/?channel=${encodeURIComponent(query)}`);
   } catch (err) {
     searchError.textContent = err.message;
     searchError.classList.remove('hidden');
@@ -222,12 +226,17 @@ async function loadMoreShorts() {
 function startPolling(channelId) {
   stopPolling();
   state.pollingTimer = setInterval(() => checkForNewShorts(channelId), 30000);
+  state.statsTimer = setInterval(() => refreshAllCardStats(), 30000);
 }
 
 function stopPolling() {
   if (state.pollingTimer) {
     clearInterval(state.pollingTimer);
     state.pollingTimer = null;
+  }
+  if (state.statsTimer) {
+    clearInterval(state.statsTimer);
+    state.statsTimer = null;
   }
 }
 
@@ -275,12 +284,14 @@ function createCard(video, isNew) {
   card.style.animationDelay = `${Math.random() * 0.15}s`;
 
   const videoId = video.id;
+  card.dataset.videoId = videoId;
   const title = video.snippet.title;
   const thumb = video.snippet.thumbnails?.maxres?.url
     || video.snippet.thumbnails?.high?.url
     || video.snippet.thumbnails?.medium?.url
     || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
   const views = formatCount(video.statistics?.viewCount || '0');
+  const likes = formatCount(video.statistics?.likeCount || '0');
   const timeAgo = formatTimeAgo(video.snippet.publishedAt);
 
   card.innerHTML = `
@@ -299,7 +310,20 @@ function createCard(video, isNew) {
     </div>
     <div class="card-body">
       <p class="card-title">${escapeHtml(title)}</p>
-      <p class="card-meta">${timeAgo}</p>
+      <div class="card-stats">
+        <span class="card-stat">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          ${views}
+        </span>
+        <span class="card-stat">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+          ${likes}
+        </span>
+        <span class="card-stat">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          ${timeAgo}
+        </span>
+      </div>
       <button class="card-download-btn" data-video-id="${videoId}" data-title="${escapeAttr(title)}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
@@ -418,6 +442,9 @@ function goBack() {
   shortsEmpty.classList.add('hidden');
   searchInput.value = '';
   searchInput.focus();
+
+  // Reset URL to home
+  history.pushState(null, '', '/');
 }
 
 // ─── Toast Notifications ────────────────────────────────────────────────────
@@ -486,3 +513,60 @@ function escapeAttr(str) {
 }
 
 // Notification permission is now handled by ShortsNotifier.init()
+
+// ─── Live Stats Refresh ─────────────────────────────────────────────────────
+async function refreshAllCardStats() {
+  if (!state.channel) return;
+  try {
+    const res = await fetch(`/api/shorts/${state.channel.id}`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    data.items.forEach((video) => {
+      const card = document.querySelector(`.short-card[data-video-id="${video.id}"]`);
+      if (!card) return;
+
+      const views = formatCount(video.statistics?.viewCount || '0');
+      const likes = formatCount(video.statistics?.likeCount || '0');
+      const timeAgo = formatTimeAgo(video.snippet.publishedAt);
+
+      const statsEl = card.querySelector('.card-stats');
+      if (statsEl) {
+        statsEl.innerHTML = `
+          <span class="card-stat">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            ${views}
+          </span>
+          <span class="card-stat">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>
+            ${likes}
+          </span>
+          <span class="card-stat">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            ${timeAgo}
+          </span>
+        `;
+      }
+    });
+  } catch (_) {
+    // Silent fail — stats refresh is non-critical
+  }
+}
+
+// ─── History API — popstate (browser back/forward) ──────────────────────────
+window.addEventListener('popstate', (event) => {
+  if (event.state && event.state.channelQuery) {
+    searchChannel(event.state.channelQuery);
+  } else {
+    goBack();
+  }
+});
+
+// ─── Restore channel from URL on page load ──────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(window.location.search);
+  const channelQuery = params.get('channel');
+  if (channelQuery) {
+    searchChannel(channelQuery);
+  }
+});

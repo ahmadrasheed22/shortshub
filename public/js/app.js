@@ -366,6 +366,16 @@ function createSkeleton() {
 function openPlayer(videoId, title) {
   state.activeVideoId = videoId;
   state.activeVideoTitle = title;
+  
+  // Update modal stats
+  const video = state.shorts.find(v => v.id === videoId);
+  if (video) {
+    const views = formatCount(video.statistics?.viewCount || '0');
+    const likes = formatCount(video.statistics?.likeCount || '0');
+    document.getElementById('modal-views-count').textContent = views;
+    document.getElementById('modal-likes-count').textContent = likes;
+  }
+
   // Use official YouTube embed URL — never raw stream URLs
   modalPlayer.innerHTML = `<iframe
     src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&rel=0&modestbranding=1"
@@ -374,6 +384,14 @@ function openPlayer(videoId, title) {
   ></iframe>`;
   videoModal.classList.remove('hidden');
   document.body.style.overflow = 'hidden';
+
+  // Animate progress bar (fake for now to show separation)
+  const pFill = document.querySelector('.progress-fill');
+  if (pFill) {
+    pFill.style.width = '0%';
+    setTimeout(() => pFill.style.width = '100%', 100);
+    pFill.style.transition = 'width 60s linear'; // Approximate a short video play time
+  }
 }
 
 function closePlayer() {
@@ -386,11 +404,17 @@ function closePlayer() {
 
 // ─── Download ───────────────────────────────────────────────────────────────
 async function downloadVideo(videoId, title) {
-  // Find and disable the download button on the card
-  const btn = document.querySelector(`.card-download-btn[data-video-id="${videoId}"]`);
-  if (btn) {
-    btn.disabled = true;
-    btn.innerHTML = `<span class="dl-spinner"></span> Downloading...`;
+  // Find and disable the download buttons (both grid card and modal)
+  const gridBtn = document.querySelector(`.card-download-btn[data-video-id="${videoId}"]`);
+  const modalBtn = document.getElementById('modal-download-btn');
+  
+  if (gridBtn) {
+    gridBtn.disabled = true;
+    gridBtn.innerHTML = `<span class="dl-spinner"></span> Downloading...`;
+  }
+  if (modalBtn && state.activeVideoId === videoId) {
+    modalBtn.disabled = true;
+    modalBtn.querySelector('.action-icon').style.opacity = '0.5';
   }
 
   showToast('Starting download — this may take a moment...', 'info');
@@ -418,12 +442,16 @@ async function downloadVideo(videoId, title) {
   } catch (err) {
     showToast(err.message || 'Download failed, please try again.', 'error');
   } finally {
-    if (btn) {
-      btn.disabled = false;
-      btn.innerHTML = `
+    if (gridBtn) {
+      gridBtn.disabled = false;
+      gridBtn.innerHTML = `
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
       `;
+    }
+    if (modalBtn) {
+      modalBtn.disabled = false;
+      modalBtn.querySelector('.action-icon').style.opacity = '1';
     }
   }
 }
@@ -523,6 +551,22 @@ async function refreshAllCardStats() {
     const data = await res.json();
 
     data.items.forEach((video) => {
+      // Update state data for live stats sync
+      const stateIdx = state.shorts.findIndex(s => s.id === video.id);
+      if (stateIdx !== -1) {
+        state.shorts[stateIdx].statistics = video.statistics;
+      }
+
+      // Update Modal if this video is currently playing
+      if (state.activeVideoId === video.id) {
+        const viewsStr = formatCount(video.statistics?.viewCount || '0');
+        const likesStr = formatCount(video.statistics?.likeCount || '0');
+        const mViews = document.getElementById('modal-views-count');
+        const mLikes = document.getElementById('modal-likes-count');
+        if (mViews) mViews.textContent = viewsStr;
+        if (mLikes) mLikes.textContent = likesStr;
+      }
+
       const card = document.querySelector(`.short-card[data-video-id="${video.id}"]`);
       if (!card) return;
 

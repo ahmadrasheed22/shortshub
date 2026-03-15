@@ -93,6 +93,7 @@ async function searchChannel(query) {
     displayChannel(data);
     await fetchShorts(data.id);
     startPolling(data.id);
+    ShortsNotifier.init();
   } catch (err) {
     searchError.textContent = err.message;
     searchError.classList.remove('hidden');
@@ -162,6 +163,15 @@ async function fetchShorts(channelId, pageToken) {
           state.knownIds.add(video.id);
           shortsGrid.appendChild(createCard(video, false));
         }
+        // Notify for every item — dedup is handled inside ShortsNotifier
+        ShortsNotifier.notifyNewShort({
+          id:          video.id,
+          title:       video.snippet?.title || 'New Short',
+          channelName: video.snippet?.channelTitle || 'YouTube',
+          url:         `https://www.youtube.com/shorts/${video.id}`,
+          thumbnail:   video.snippet?.thumbnails?.high?.url ||
+                       video.snippet?.thumbnails?.medium?.url || '',
+        });
       });
       updateShortsCount();
     }
@@ -240,15 +250,19 @@ async function checkForNewShorts(channelId) {
 
       updateShortsCount();
       showToast(`${newShorts.length} new Short${newShorts.length > 1 ? 's' : ''} detected!`, 'success');
-
-      // Browser notification
-      if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('ShortsHub', {
-          body: `${newShorts.length} new Short${newShorts.length > 1 ? 's' : ''} from ${state.channel.title}`,
-          icon: state.channel.thumbnail,
-        });
-      }
     }
+
+    // Notify for every item in the response — dedup inside ShortsNotifier
+    data.items.forEach((video) => {
+      ShortsNotifier.notifyNewShort({
+        id:          video.id,
+        title:       video.snippet?.title || 'New Short',
+        channelName: video.snippet?.channelTitle || 'YouTube',
+        url:         `https://www.youtube.com/shorts/${video.id}`,
+        thumbnail:   video.snippet?.thumbnails?.high?.url ||
+                     video.snippet?.thumbnails?.medium?.url || '',
+      });
+    });
   } catch (_) {
     // Silent fail for polling — don't spam the user
   }
@@ -471,9 +485,4 @@ function escapeAttr(str) {
   return String(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// ─── Request notification permission on first interaction ───────────────────
-document.addEventListener('click', () => {
-  if ('Notification' in window && Notification.permission === 'default') {
-    Notification.requestPermission();
-  }
-}, { once: true });
+// Notification permission is now handled by ShortsNotifier.init()

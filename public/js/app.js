@@ -81,15 +81,28 @@ scrollObserver.observe(scrollSentinel);
 async function searchChannel(query) {
   searchError.classList.add('hidden');
   loadingOverlay.classList.remove('hidden');
+  const searchBtn = $('#search-btn');
+  const originalSearchText = searchBtn.innerHTML;
+  searchBtn.disabled = true;
+  searchBtn.innerHTML = '<span class="dl-spinner" style="width: 14px; height: 14px; border: 2px solid white; border-top-color: transparent; border-radius: 50%; display: inline-block; animation: spin 0.6s linear infinite; margin-right: 5px;"></span> Searching...';
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const res = await fetch(`/api/channel?q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-
+    const res = await fetch('/api/channel?q=' + encodeURIComponent(query), { signal: controller.signal });
+    clearTimeout(timer);
+    
     if (!res.ok) {
-      throw new Error(data.error || 'Channel not found.');
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) searchError.textContent = 'YouTube API quota exceeded. Try again tomorrow.';
+      else if (res.status === 404) searchError.textContent = 'Channel not found. Check the name or URL.';
+      else searchError.textContent = 'Something went wrong. Please try again.';
+      searchError.classList.remove('hidden');
+      return;
     }
-
+    
+    const data = await res.json();
     state.channel = data;
     displayChannel(data);
     await fetchShorts(data.id);
@@ -99,10 +112,17 @@ async function searchChannel(query) {
     // Push channel to URL so refresh restores this page
     history.pushState({ channelId: data.id, channelQuery: query }, '', `/?channel=${encodeURIComponent(query)}`);
   } catch (err) {
-    searchError.textContent = err.message;
+    clearTimeout(timer);
+    if (err.name === 'AbortError') {
+      searchError.textContent = 'Request timed out. Please try again.';
+    } else {
+      searchError.textContent = 'Server is offline. Please try again later.';
+    }
     searchError.classList.remove('hidden');
   } finally {
     loadingOverlay.classList.add('hidden');
+    searchBtn.disabled = false;
+    searchBtn.innerHTML = originalSearchText;
   }
 }
 
@@ -145,14 +165,23 @@ async function fetchShorts(channelId, pageToken) {
     }
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+
   try {
-    let url = `/api/shorts/${channelId}`;
-    if (pageToken) url += `?pageToken=${pageToken}`;
+    let url = '/api/shorts/' + channelId;
+    if (pageToken) url += '?pageToken=' + pageToken;
 
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      if (res.status === 403) throw new Error('YouTube API quota exceeded. Try again tomorrow.');
+      else throw new Error('Something went wrong. Please try again.');
+    }
+    
     const data = await res.json();
-
-    if (!res.ok) throw new Error(data.error || 'Failed to fetch Shorts.');
 
     // Clear skeletons on first load
     if (!pageToken) shortsGrid.innerHTML = '';
@@ -182,7 +211,16 @@ async function fetchShorts(channelId, pageToken) {
 
     state.nextPageToken = data.nextPageToken;
   } catch (err) {
-    showToast(err.message, 'error');
+    clearTimeout(timer);
+    let errMsg = '';
+    if (err.name === 'AbortError') {
+      errMsg = 'Request timed out. Please try again.';
+    } else if (err.message.includes('quota')) {
+      errMsg = err.message;
+    } else {
+      errMsg = 'Server is offline. Please try again later.';
+    }
+    showToast(errMsg, 'error');
     if (state.shorts.length === 0) {
       shortsGrid.innerHTML = '';
       shortsEmpty.classList.remove('hidden');
@@ -198,11 +236,19 @@ async function loadMoreShorts() {
   state.isLoadingMore = true;
   loadMoreSpinner.classList.remove('hidden');
 
-  try {
-    const res = await fetch(`/api/shorts/${state.channel.id}?pageToken=${state.nextPageToken}`);
-    const data = await res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
 
-    if (!res.ok) throw new Error(data.error);
+  try {
+    const res = await fetch('/api/shorts/' + state.channel.id + '?pageToken=' + state.nextPageToken, { signal: controller.signal });
+    clearTimeout(timer);
+
+    if (!res.ok) {
+      if (res.status === 403) throw new Error('YouTube API quota exceeded. Try again tomorrow.');
+      else throw new Error('Something went wrong. Please try again.');
+    }
+    
+    const data = await res.json();
 
     data.items.forEach((video) => {
       if (!state.knownIds.has(video.id)) {
@@ -215,7 +261,14 @@ async function loadMoreShorts() {
     state.nextPageToken = data.nextPageToken;
     updateShortsCount();
   } catch (err) {
-    showToast('Failed to load more Shorts.', 'error');
+    clearTimeout(timer);
+    let errMsg = '';
+    if (err.name === 'AbortError') {
+      errMsg = 'Request timed out. Please try again.';
+    } else {
+      errMsg = 'Server is offline. Please try again later.';
+    }
+    showToast(errMsg, 'error');
   } finally {
     state.isLoadingMore = false;
     loadMoreSpinner.classList.add('hidden');
@@ -241,8 +294,12 @@ function stopPolling() {
 }
 
 async function checkForNewShorts(channelId) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
+
   try {
-    const res = await fetch(`/api/shorts/${channelId}`);
+    const res = await fetch('/api/shorts/' + channelId, { signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -273,7 +330,7 @@ async function checkForNewShorts(channelId) {
       });
     });
   } catch (_) {
-    // Silent fail for polling — don't spam the user
+    clearTimeout(timer);
   }
 }
 
@@ -411,28 +468,74 @@ async function downloadVideo(videoId, title) {
 
   showToast('Starting download — this may take a moment...', 'info');
 
-  try {
-    const res = await fetch(`/api/download/${videoId}?title=${encodeURIComponent(title)}`);
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => null);
-      throw new Error(errData?.error || 'Download failed.');
+  const performDownload = async (isRetry = false) => {
+    // Ping health check before starting download
+    try {
+      const healthRes = await fetch('/health', { method: 'GET' });
+      if (!healthRes.ok) throw new Error('Offline');
+    } catch (_) {
+      throw new Error('Server is offline. Please try again later.');
     }
 
-    // Create a blob and trigger the download
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${title.replace(/[^\w\s-]/g, '').trim().substring(0, 80) || 'ShortsHub-Video'}.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 35000);
 
-    showToast('Download complete!', 'success');
+    try {
+      const res = await fetch('/api/download/' + videoId + '?title=' + encodeURIComponent(title), {
+        signal: controller.signal
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 504) throw new Error('Download timed out. Please try again.');
+        else throw new Error('Something went wrong. Please try again.');
+      }
+
+      // Create a blob and trigger the download
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${title.replace(/[^\w\s-]/g, '').trim().substring(0, 80) || 'ShortsHub-Video'}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast('Download complete!', 'success');
+    } catch (err) {
+      clearTimeout(timer);
+      
+      // Handle network errors (Failed to fetch) separately to allow a retry
+      if (err.name === 'TypeError' || err.message === 'Failed to fetch' || err.message.includes('NetworkError') || err.message === 'Load failed') {
+        if (!isRetry) {
+          showToast('Network error, retrying download...', 'info');
+          return new Promise((resolve, reject) => {
+            setTimeout(() => {
+              performDownload(true).then(resolve).catch(reject);
+            }, 4000);
+          });
+        }
+        throw new Error('Server is offline. Please try again later.');
+      }
+
+      let errorMsg = '';
+      if (err.name === 'AbortError' || err.message.includes('timed out')) {
+        errorMsg = 'Download timed out. Please try again.';
+      } else {
+        errorMsg = err.message || 'Something went wrong. Please try again.';
+      }
+      
+      throw new Error(errorMsg);
+    }
+  };
+
+  try {
+    await performDownload();
   } catch (err) {
-    showToast(err.message || 'Download failed, please try again.', 'error');
+    showToast(err.message, 'error');
   } finally {
     if (gridBtn) {
       gridBtn.disabled = false;
@@ -537,8 +640,11 @@ function escapeAttr(str) {
 // ─── Live Stats Refresh ─────────────────────────────────────────────────────
 async function refreshAllCardStats() {
   if (!state.channel) return;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch(`/api/shorts/${state.channel.id}`);
+    const res = await fetch('/api/shorts/' + state.channel.id, { signal: controller.signal });
+    clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -600,6 +706,66 @@ window.addEventListener('popstate', (event) => {
 
 // ─── Restore channel from URL on page load ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  const banner = document.createElement('div');
+  banner.id = 'offline-banner';
+  banner.style.position = 'fixed';
+  banner.style.top = '0';
+  banner.style.left = '0';
+  banner.style.width = '100%';
+  banner.style.background = '#FF4466';
+  banner.style.color = 'white';
+  banner.style.padding = '12px';
+  banner.style.textAlign = 'center';
+  banner.style.zIndex = '9999';
+  banner.style.fontWeight = '600';
+  banner.style.display = 'none';
+  banner.textContent = '⚠️ Service is temporarily offline. Please try again later.';
+  document.body.prepend(banner);
+
+  let isOffline = false;
+
+  const showOfflineBanner = () => {
+    isOffline = true;
+    banner.style.display = 'block';
+  };
+
+  const hideBanner = () => {
+    if (isOffline) {
+      showToast('✅ Service restored', 'success');
+      isOffline = false;
+    }
+    banner.style.display = 'none';
+  };
+
+  async function checkServerHealth() {
+    const dot = document.getElementById('server-status-dot');
+    const text = document.getElementById('server-status-text');
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      const ping = await fetch('/health', { signal: controller.signal });
+      clearTimeout(timeout);
+      if (ping.ok) {
+        const data = await ping.json();
+        if (data.status === 'ok') {
+          if (dot) { dot.style.background = '#00FF88'; dot.style.boxShadow = '0 0 10px #00FF88'; }
+          if (text) text.textContent = 'Online';
+          hideBanner();
+          return;
+        }
+      }
+      throw new Error('not ok');
+    } catch {
+      if (dot) { dot.style.background = '#FF4466'; dot.style.boxShadow = '0 0 10px #FF4466'; }
+      if (text) text.textContent = 'Offline';
+      showOfflineBanner();
+    }
+  }
+
+  // Run immediately after 1 second, then every 30 seconds
+  setTimeout(checkServerHealth, 1000);
+  setInterval(checkServerHealth, 30000);
+
   const params = new URLSearchParams(window.location.search);
   const channelQuery = params.get('channel');
   if (channelQuery) {

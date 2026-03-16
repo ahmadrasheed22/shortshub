@@ -20,12 +20,31 @@ const os = require('os');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.YOUTUBE_API_KEY;
+if (!API_KEY) {
+  console.error('❌ FATAL: YOUTUBE_API_KEY is missing from .env — server will not work!');
+  process.exit(1);
+}
 const YT = 'https://www.googleapis.com/youtube/v3';
 
 // ─── Static Files ───────────────────────────────────────────────────────────
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ─── CORS & OPTIONS Preflight ────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
+
 // ─── Helper: Parse ISO 8601 Duration → seconds ─────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
+});
+
 function parseDuration(iso) {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -171,10 +190,10 @@ app.get('/api/shorts/:channelId', async (req, res) => {
       },
     });
 
-    // Filter to Shorts only (duration ≤ 60 seconds)
+    // Filter to Shorts only (duration ≤ 180 seconds)
     const shorts = (vRes.data.items || []).filter(v => {
       const dur = parseDuration(v.contentDetails?.duration || '');
-      return dur > 0 && dur <= 60;
+      return dur > 0 && dur <= 180;
     });
 
     res.json({
@@ -189,7 +208,7 @@ app.get('/api/shorts/:channelId', async (req, res) => {
 });
 
 // ─── API: Download via yt-dlp ──────────────────────────────────────────────
-app.get('/api/download/:videoId', (req, res) => {
+app.get('/api/download/:videoId', async (req, res) => {
   const { videoId } = req.params;
   const requestedTitle = req.query.title || '';
 
@@ -213,42 +232,78 @@ app.get('/api/download/:videoId', (req, res) => {
     } catch (_) { /* proceed to download */ }
   }
 
-  // Download with yt-dlp
-  const ytdlp = spawn('yt-dlp', [
-    '-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
-    '--merge-output-format', 'mp4',
-    '-o', tempFile,
-    '--force-overwrites',
-    '--no-warnings',
-    '--no-playlist',
-    '--user-agent',
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-    videoUrl,
-  ]);
+  const downloadVideo = () => {
+    return new Promise((resolve, reject) => {
+      let isTimeout = false;
+      const ytdlp = spawn('yt-dlp', [
+        '-f', 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '--merge-output-format', 'mp4',
+        '-o', tempFile,
+        '--force-overwrites',
+        '--no-warnings',
+        '--no-playlist',
+        '--socket-timeout', '10',
+        '--retries', '3',
+        '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        videoUrl,
+      ]);
 
-  let stderrLog = '';
-  ytdlp.stderr.on('data', d => { stderrLog += d.toString(); });
+      const timeoutId = setTimeout(() => {
+        isTimeout = true;
+        ytdlp.kill();
+        reject(new Error('TIMEOUT'));
+      }, 30000);
 
-  ytdlp.on('error', err => {
-    console.error('yt-dlp spawn error:', err.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'yt-dlp is not installed. Please install it: https://github.com/yt-dlp/yt-dlp' });
+      req.on('close', () => { if (!ytdlp.killed) ytdlp.kill(); });
+
+      let stderrLog = '';
+      ytdlp.stderr.on('data', d => { stderrLog += d.toString(); });
+
+      ytdlp.on('error', err => {
+        clearTimeout(timeoutId);
+        if (err.code === 'ENOENT') {
+          reject(new Error('yt-dlp is not installed or not found in PATH.'));
+        } else {
+          reject(err);
+        }
+      });
+
+      ytdlp.on('close', code => {
+        clearTimeout(timeoutId);
+        if (isTimeout) return;
+        if (code === 0 && fs.existsSync(tempFile)) {
+          resolve();
+        } else {
+          reject(new Error(`yt-dlp failed (code ${code}): ${stderrLog}`));
+        }
+      });
+    });
+  };
+
+  try {
+    await downloadVideo();
+    serveFile(res, tempFile, requestedTitle || videoId);
+  } catch (error) {
+    if (error.message === 'TIMEOUT') {
+      return res.status(504).json({ error: 'Download timed out. Try again.' });
     }
-  });
-
-  ytdlp.on('close', code => {
-    if (code === 0 && fs.existsSync(tempFile)) {
-      serveFile(res, tempFile, requestedTitle || videoId);
-    } else {
-      console.error('yt-dlp failed (code ' + code + '):', stderrLog);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Download failed. Please try again.' });
+    console.error('Download attempt 1 failed:', error.message);
+    
+    // Retry once with a 3-second delay
+    setTimeout(async () => {
+      try {
+        await downloadVideo();
+        if (!res.headersSent) serveFile(res, tempFile, requestedTitle || videoId);
+      } catch (retryError) {
+        if (retryError.message === 'TIMEOUT') {
+          if (!res.headersSent) res.status(504).json({ error: 'Download timed out. Try again.' });
+        } else {
+          console.error('Download attempt 2 failed:', retryError.message);
+          if (!res.headersSent) res.status(500).json({ error: 'Download failed. The video may be unavailable.' });
+        }
       }
-    }
-  });
-
-  // Abort download if client disconnects
-  req.on('close', () => { if (!ytdlp.killed) ytdlp.kill(); });
+    }, 3000);
+  }
 });
 
 function serveFile(res, filepath, title) {
@@ -265,6 +320,21 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ─── Temp File Cleanup (Every 30 Mins) ──────────────────────────────────────
+setInterval(() => {
+  const dir = path.join(os.tmpdir(), 'shortshub-downloads');
+  if (!fs.existsSync(dir)) return;
+  try {
+    fs.readdirSync(dir).forEach(file => {
+      const fp = path.join(dir, file);
+      const age = Date.now() - fs.statSync(fp).mtimeMs;
+      if (age > 7200000) fs.unlinkSync(fp);
+    });
+  } catch (err) {
+    console.error('Cleanup error:', err.message);
+  }
+}, 1800000);
+
 // ─── Start Server ───────────────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log('');
@@ -272,5 +342,9 @@ app.listen(PORT, () => {
   console.log('  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → API Key: ${API_KEY ? '✓ Loaded' : '✗ MISSING — set YOUTUBE_API_KEY in .env'}`);
+  console.log('  → Updating yt-dlp...');
+  const updater = spawn('yt-dlp', ['-U']);
+  updater.stdout.on('data', d => console.log('    yt-dlp:', d.toString().trim()));
+  updater.stderr.on('data', d => console.error('    yt-dlp error:', d.toString().trim()));
   console.log('');
 });

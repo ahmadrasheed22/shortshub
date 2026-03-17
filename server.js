@@ -248,7 +248,7 @@ app.get('/api/download/:videoId', async (req, res) => {
         '--no-part',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         videoUrl,
-      ], { windowsHide: true, detached: false, shell: true });
+      ], { windowsHide: true, detached: false, shell: false });
 
       const timeoutId = setTimeout(() => {
         isTimeout = true;
@@ -345,7 +345,7 @@ app.listen(PORT, () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → API Key: ${API_KEY ? '✓ Loaded' : '✗ MISSING — set YOUTUBE_API_KEY in .env'}`);
   console.log('  → Updating yt-dlp...');
-  const updater = spawn('yt-dlp', ['-U'], { windowsHide: true, shell: true });
+  const updater = spawn('yt-dlp', ['-U'], { windowsHide: true, shell: false });
   updater.on('error', (err) => {
     console.error('    yt-dlp updater could not start (missing or not in PATH).');
   });

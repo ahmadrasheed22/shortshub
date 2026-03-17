@@ -236,7 +236,7 @@ app.get('/api/download/:videoId', async (req, res) => {
     return new Promise((resolve, reject) => {
       let isTimeout = false;
       const ytdlp = spawn('yt-dlp', [
-        '-f', 'bestvideo[ext=mp4][height<=720]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        '-f', 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
         '--merge-output-format', 'mp4',
         '-o', tempFile,
         '--force-overwrites',
@@ -244,15 +244,17 @@ app.get('/api/download/:videoId', async (req, res) => {
         '--no-playlist',
         '--socket-timeout', '10',
         '--retries', '3',
+        '--concurrent-fragments', '4',
+        '--no-part',
         '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         videoUrl,
-      ]);
+      ], { windowsHide: true, detached: false, shell: true });
 
       const timeoutId = setTimeout(() => {
         isTimeout = true;
         ytdlp.kill();
         reject(new Error('TIMEOUT'));
-      }, 30000);
+      }, 60000);
 
       req.on('close', () => { if (!ytdlp.killed) ytdlp.kill(); });
 
@@ -343,7 +345,10 @@ app.listen(PORT, () => {
   console.log(`  → http://localhost:${PORT}`);
   console.log(`  → API Key: ${API_KEY ? '✓ Loaded' : '✗ MISSING — set YOUTUBE_API_KEY in .env'}`);
   console.log('  → Updating yt-dlp...');
-  const updater = spawn('yt-dlp', ['-U']);
+  const updater = spawn('yt-dlp', ['-U'], { windowsHide: true, shell: true });
+  updater.on('error', (err) => {
+    console.error('    yt-dlp updater could not start (missing or not in PATH).');
+  });
   updater.stdout.on('data', d => console.log('    yt-dlp:', d.toString().trim()));
   updater.stderr.on('data', d => console.error('    yt-dlp error:', d.toString().trim()));
   console.log('');

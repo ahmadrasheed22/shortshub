@@ -50,6 +50,8 @@ const modalCloseBtn = $('#modal-close-btn');
 const modalDownloadBtn = $('#modal-download-btn');
 const backBtn = $('#back-btn');
 const toastContainer = $('#toast-container');
+const recentlyViewedContainer = $('#recently-viewed-container');
+const recentlyViewedList = $('#recently-viewed-list');
 
 // ─── Event Listeners ────────────────────────────────────────────────────────
 searchForm.addEventListener('submit', (e) => {
@@ -104,6 +106,7 @@ async function searchChannel(query) {
     
     const data = await res.json();
     state.channel = data;
+    saveToRecentlyViewed(data);
     displayChannel(data);
     await fetchShorts(data.id);
     startPolling(data.id);
@@ -695,6 +698,84 @@ async function refreshAllCardStats() {
   }
 }
 
+// ─── Recently Viewed ────────────────────────────────────────────────────────
+function saveToRecentlyViewed(ch) {
+  try {
+    const list = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
+    // Filter duplicates
+    const filtered = list.filter(item => item.id !== ch.id);
+    // Add to front
+    filtered.unshift({
+      id: ch.id,
+      title: ch.title,
+      thumbnail: ch.thumbnail,
+      subscriberCount: ch.subscriberCount,
+      customUrl: ch.customUrl
+    });
+    // Cap at 8
+    const capped = filtered.slice(0, 8);
+    localStorage.setItem('recentlyViewed', JSON.stringify(capped));
+    renderRecentlyViewed();
+  } catch (e) {
+    console.error('RecentlyViewed Error:', e);
+  }
+}
+
+function renderRecentlyViewed() {
+  if (!recentlyViewedContainer || !recentlyViewedList) return;
+  
+  try {
+    const list = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
+    if (list.length === 0) {
+      recentlyViewedContainer.classList.add('hidden');
+      return;
+    }
+
+    recentlyViewedContainer.classList.remove('hidden');
+    recentlyViewedList.innerHTML = '';
+
+    list.forEach(ch => {
+      const card = document.createElement('div');
+      card.className = 'recent-card';
+      const handleText = ch.customUrl || (ch.subscriberCount ? formatCount(ch.subscriberCount) + ' subs' : '');
+      
+      card.innerHTML = `
+        <img src="${ch.thumbnail}" class="recent-avatar" alt="${escapeAttr(ch.title)}">
+        <div class="recent-info">
+          <span class="recent-name">${escapeHtml(ch.title)}</span>
+          <span class="recent-handle">${escapeHtml(handleText)}</span>
+        </div>
+        <button class="recent-remove" title="Remove">✕</button>
+      `;
+
+      card.addEventListener('click', () => {
+        searchInput.value = ch.customUrl || ch.id;
+        searchChannel(ch.customUrl || ch.id);
+      });
+
+      card.querySelector('.recent-remove').addEventListener('click', (e) => {
+        e.stopPropagation();
+        removeFromRecentlyViewed(ch.id);
+      });
+
+      recentlyViewedList.appendChild(card);
+    });
+  } catch (e) {
+    console.error('RecentlyViewed Render Error:', e);
+  }
+}
+
+function removeFromRecentlyViewed(id) {
+  try {
+    const list = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
+    const newList = list.filter(item => item.id !== id);
+    localStorage.setItem('recentlyViewed', JSON.stringify(newList));
+    renderRecentlyViewed();
+  } catch (e) {
+    console.error('RecentlyViewed Remove Error:', e);
+  }
+}
+
 // ─── History API — popstate (browser back/forward) ──────────────────────────
 window.addEventListener('popstate', (event) => {
   if (event.state && event.state.channelQuery) {
@@ -706,6 +787,7 @@ window.addEventListener('popstate', (event) => {
 
 // ─── Restore channel from URL on page load ──────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
+  renderRecentlyViewed();
   const banner = document.createElement('div');
   banner.id = 'offline-banner';
   banner.style.position = 'fixed';

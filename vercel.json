@@ -5,6 +5,7 @@
     { "source": "/api/shorts/:channelId", "destination": "/api/shorts/[channelId]" },
     { "source": "/api/download/:videoId", "destination": "/api/download/[videoId]" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/", "destination": "/public/index.html" },
     { "source": "/(.*)", "destination": "/public/$1" }
   ]
 }

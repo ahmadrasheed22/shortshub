@@ -644,7 +644,11 @@ function createCard(video, isNew) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
       </button>
+      <button class="card-tiktok-btn" style="background: #010101; color: white; border: none; padding: 8px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; display: flex; align-items: center; gap: 6px; width: 100%; justify-content: center; margin-top: 8px;">
+        🎵 Post to TikTok
+      </button>
     </div>
+
   `;
 
   // Play on thumbnail click
@@ -655,6 +659,13 @@ function createCard(video, isNew) {
     e.stopPropagation();
     downloadVideo(videoId, title);
   });
+
+  // Post to TikTok button
+  card.querySelector('.card-tiktok-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    showPostModal(videoId, title);
+  });
+
 
   // Remove "NEW" glow after 30 seconds
   if (isNew) {
@@ -1082,11 +1093,11 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 5000);
-      const ping = await fetch('/health', { signal: controller.signal });
+      const ping = await fetch('/api/status', { signal: controller.signal });
       clearTimeout(timeout);
       if (ping.ok) {
         const data = await ping.json();
-        if (data.status === 'ok') {
+        if (data.online === true) {
           if (dot) { dot.style.background = '#00FF88'; dot.style.boxShadow = '0 0 10px #00FF88'; }
           if (text) text.textContent = 'Online';
           hideBanner();
@@ -1099,15 +1110,127 @@ document.addEventListener('DOMContentLoaded', () => {
       if (text) text.textContent = 'Offline';
       showOfflineBanner();
     }
+
   }
 
   // Run immediately after 1 second, then every 30 seconds
   setTimeout(checkServerHealth, 1000);
   setInterval(checkServerHealth, 30000);
 
+  // TikTok Auth Check
   const params = new URLSearchParams(window.location.search);
+  const tiktokToken = params.get('tiktok_token');
+  const tiktokUser = params.get('tiktok_user');
+  if (tiktokToken) {
+    localStorage.setItem('tiktok_token', tiktokToken);
+    localStorage.setItem('tiktok_user', tiktokUser);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  updateTikTokUI();
+
   const channelQuery = params.get('channel');
   if (channelQuery) {
     searchChannel(channelQuery);
   }
 });
+
+function updateTikTokUI() {
+  const btn = $('#tiktok-login-btn');
+  if (!btn) return;
+  const token = localStorage.getItem('tiktok_token');
+  if (token) {
+    btn.innerHTML = '🎵 Connected';
+    btn.style.background = '#00FF88';
+    btn.style.color = '#000';
+  } else {
+    btn.innerHTML = '🎵 Login with TikTok';
+  }
+}
+
+async function handleTikTokLogin() {
+  try {
+    const res = await fetch('/api/login');
+    const data = await res.json();
+    if (data.authUrl) {
+      window.location.href = data.authUrl;
+    }
+  } catch (err) {
+    showToast('Failed to connect with TikTok', 'error');
+  }
+}
+
+$('#tiktok-login-btn').addEventListener('click', handleTikTokLogin);
+
+// Post Modal Logic
+function showPostModal(videoId, title) {
+  const token = localStorage.getItem('tiktok_token');
+  if (!token) {
+    showToast('Please login with TikTok first', 'info');
+    return;
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'post-modal';
+  modal.style.position = 'fixed';
+  modal.style.inset = '0';
+  modal.style.background = 'rgba(0,0,0,0.85)';
+  modal.style.backdropFilter = 'blur(10px)';
+  modal.style.display = 'flex';
+  modal.style.alignItems = 'center';
+  modal.style.justifyContent = 'center';
+  modal.style.zIndex = '10000';
+
+  const AUTO_HASHTAGS = '#YouTubeShorts #Shorts #FYP #ForYou #ForYouPage #Viral #Trending #NewVideo';
+  
+  modal.innerHTML = `
+    <div style="background: #111118; border: 1px solid rgba(255,255,255,0.1); padding: 30px; border-radius: 20px; width: 90%; max-width: 450px;">
+      <h3 style="margin-bottom: 20px; font-family: 'Space Grotesk', sans-serif;">Post to TikTok</h3>
+      <p style="font-size: 14px; color: #8888AA; margin-bottom: 10px;">Caption:</p>
+      <textarea id="post-caption" style="width: 100%; height: 100px; background: #1A1A26; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; color: white; padding: 12px; font-family: inherit; resize: none; margin-bottom: 20px;">${title} ${AUTO_HASHTAGS}</textarea>
+      
+      <div style="display: flex; gap: 10px;">
+        <button id="post-now-btn" style="flex: 1; background: linear-gradient(135deg, #6C63FF 0%, #00D4FF 100%); color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer;">Post Now</button>
+        <button id="post-cancel-btn" style="flex: 1; background: rgba(255,255,255,0.05); color: white; border: 1px solid rgba(255,255,255,0.1); padding: 12px; border-radius: 10px; cursor: pointer;">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector('#post-cancel-btn').addEventListener('click', () => modal.remove());
+  modal.querySelector('#post-now-btn').addEventListener('click', async () => {
+    const btn = modal.querySelector('#post-now-btn');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = 'Posting...';
+
+    const caption = modal.querySelector('#post-caption').value;
+    const videoUrl = `https://www.youtube.com/shorts/${videoId}`;
+
+    try {
+      const res = await fetch('/api/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl,
+          title: caption,
+          accessToken: token
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast('Successfully posted to TikTok!', 'success');
+        modal.remove();
+      } else {
+        throw new Error(data.error || 'Failed to post');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalText;
+    }
+  });
+}
+

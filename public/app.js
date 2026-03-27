@@ -1,5 +1,256 @@
 /**
- * ShortsHub v2.0 — Frontend Application
+ * ShortsHub v2.0 â€” Browser Push Notifications Module
+ *
+ * Uses the Web Notifications API (no Service Worker required).
+ * Provides deduplication via localStorage so each Short
+ * only triggers one notification ever.
+ */
+
+(function () {
+  'use strict';
+
+  const STORAGE_KEY = 'shortshub_seen_ids';
+  const MAX_SEEN = 200;
+
+  // â”€â”€â”€ Seen-ID Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /** @returns {Set<string>} Video IDs that have already been notified */
+  function getSeenIds() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw);
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch {
+      return new Set();
+    }
+  }
+
+  /**
+   * Add a video ID to the seen set and persist it.
+   * Keeps only the last MAX_SEEN entries to avoid bloat.
+   */
+  function markAsSeen(videoId) {
+    const seen = getSeenIds();
+    seen.add(videoId);
+
+    // Trim to the last MAX_SEEN entries
+    const arr = [...seen];
+    const trimmed = arr.length > MAX_SEEN ? arr.slice(arr.length - MAX_SEEN) : arr;
+
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    } catch {
+      // Storage full â€” silently ignore
+    }
+  }
+
+  // â”€â”€â”€ In-Page Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  const BANNER_ID = 'shortshub-notif-banner';
+
+  /**
+   * Show a fixed-position banner at the top of the viewport.
+   * @param {string} message   â€” Text to display
+   * @param {'success'|'info'|'warning'} type â€” Controls background colour
+   * @param {string} [linkUrl] â€” Optional URL to link the message to
+   */
+  function showInPageBanner(message, type, linkUrl) {
+    // Remove any existing banner first
+    const existing = document.getElementById(BANNER_ID);
+    if (existing) existing.remove();
+
+    const colors = {
+      success: { bg: '#14532d', border: '#22c55e' },
+      info:    { bg: '#1e3a5f', border: '#3b82f6' },
+      warning: { bg: '#78350f', border: '#f59e0b' },
+    };
+    const scheme = colors[type] || colors.info;
+
+    const banner = document.createElement('div');
+    banner.id = BANNER_ID;
+    Object.assign(banner.style, {
+      position: 'fixed',
+      top: '0',
+      left: '0',
+      right: '0',
+      zIndex: '99999',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: '10px',
+      padding: '12px 20px',
+      background: scheme.bg,
+      borderBottom: `2px solid ${scheme.border}`,
+      color: '#fff',
+      fontFamily: "'Inter', sans-serif",
+      fontSize: '14px',
+      fontWeight: '500',
+      lineHeight: '1.4',
+      boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+      transition: 'opacity 0.3s ease, transform 0.3s ease',
+      opacity: '0',
+      transform: 'translateY(-100%)',
+    });
+
+    // Message text (optionally as a link)
+    const msgEl = document.createElement(linkUrl ? 'a' : 'span');
+    msgEl.textContent = message;
+    if (linkUrl) {
+      msgEl.href = linkUrl;
+      msgEl.target = '_blank';
+      msgEl.rel = 'noopener noreferrer';
+      Object.assign(msgEl.style, { color: '#fff', textDecoration: 'underline' });
+    }
+    banner.appendChild(msgEl);
+
+    // Close (âœ•) button
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = 'âœ•';
+    Object.assign(closeBtn.style, {
+      background: 'none',
+      border: 'none',
+      color: '#fff',
+      fontSize: '16px',
+      cursor: 'pointer',
+      padding: '0 0 0 12px',
+      lineHeight: '1',
+      opacity: '0.7',
+    });
+    closeBtn.addEventListener('mouseenter', () => (closeBtn.style.opacity = '1'));
+    closeBtn.addEventListener('mouseleave', () => (closeBtn.style.opacity = '0.7'));
+    closeBtn.addEventListener('click', () => dismissBanner(banner));
+    banner.appendChild(closeBtn);
+
+    document.body.appendChild(banner);
+
+    // Animate in
+    requestAnimationFrame(() => {
+      banner.style.opacity = '1';
+      banner.style.transform = 'translateY(0)';
+    });
+
+    // Auto-dismiss success & info after 6 seconds
+    if (type === 'success' || type === 'info') {
+      setTimeout(() => dismissBanner(banner), 6000);
+    }
+  }
+
+  function dismissBanner(banner) {
+    if (!banner || !banner.parentNode) return;
+    banner.style.opacity = '0';
+    banner.style.transform = 'translateY(-100%)';
+    setTimeout(() => banner.remove(), 300);
+  }
+
+  // â”€â”€â”€ Permission & Initialisation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /**
+   * Request notification permission if not yet decided.
+   * Called once when the user starts monitoring a channel.
+   */
+  async function init() {
+    if (!('Notification' in window)) {
+      showInPageBanner(
+        'Your browser does not support desktop notifications. In-page alerts will be used instead.',
+        'warning'
+      );
+      return;
+    }
+
+    if (Notification.permission === 'granted') {
+      // Already good â€” no need to disturb the user
+      return;
+    }
+
+    if (Notification.permission === 'denied') {
+      showInPageBanner(
+        'Notifications are blocked. To enable them, click the lock icon in your address bar â†’ Site Settings â†’ Allow Notifications.',
+        'warning'
+      );
+      return;
+    }
+
+    // permission === 'default' â†’ ask the user
+    try {
+      const result = await Notification.requestPermission();
+      if (result === 'granted') {
+        showInPageBanner('ðŸ”” Notifications enabled â€” you\'ll be alerted when new Shorts drop!', 'success');
+      } else {
+        showInPageBanner(
+          'Notifications were declined. You can enable them later in your browser settings.',
+          'warning'
+        );
+      }
+    } catch {
+      // Some browsers throw on requestPermission â€” fall back silently
+    }
+  }
+
+  // â”€â”€â”€ Fire a Notification â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /**
+   * Notify the user about a new Short.
+   * Deduplicates via localStorage so each Short only triggers once.
+   *
+   * @param {{ id: string, title: string, channelName: string, url: string, thumbnail: string }} short
+   */
+  function notifyNewShort(short) {
+    const seen = getSeenIds();
+    if (seen.has(short.id)) return; // Already notified â€” skip
+
+    markAsSeen(short.id);
+
+    const canNotify =
+      'Notification' in window && Notification.permission === 'granted';
+
+    if (canNotify) {
+      try {
+        const notif = new Notification(`New Short from ${short.channelName}`, {
+          body: short.title,
+          icon: short.thumbnail || 'https://www.youtube.com/favicon.ico',
+          tag: `shortshub-${short.id}`,
+          renotify: false,
+        });
+
+        notif.onclick = function () {
+          window.open(short.url, '_blank');
+          notif.close();
+        };
+
+        // Auto-close after 8 seconds
+        setTimeout(() => {
+          try { notif.close(); } catch { /* already closed */ }
+        }, 8000);
+      } catch {
+        // Notification constructor failed â€” fall back to banner
+        showInPageBanner(
+          `New Short from ${short.channelName}: ${short.title}`,
+          'info',
+          short.url
+        );
+      }
+    } else {
+      // Permission not granted â€” use in-page banner
+      showInPageBanner(
+        `New Short from ${short.channelName}: ${short.title}`,
+        'info',
+        short.url
+      );
+    }
+  }
+
+  // â”€â”€â”€ Export as global â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  window.ShortsNotifier = {
+    init,
+    notifyNewShort,
+    requestPermission: init, // alias â€” spec says "requestPermission"
+    showInPageBanner,
+  };
+})();
+/**
+ * ShortsHub v2.0 â€” Frontend Application
  *
  * Features:
  *   - Smart channel search (ID, @handle, URL, name)
@@ -10,7 +261,7 @@
  *   - Toast notifications for all errors
  */
 
-// ─── State ──────────────────────────────────────────────────────────────────
+// â”€â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const state = {
   channel: null,
   shorts: [],
@@ -24,7 +275,7 @@ const state = {
   activeVideoTitle: '',
 };
 
-// ─── DOM Elements ───────────────────────────────────────────────────────────
+// â”€â”€â”€ DOM Elements â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const $ = (sel) => document.querySelector(sel);
 const searchSection = $('#search-section');
 const channelSection = $('#channel-section');
@@ -53,7 +304,7 @@ const toastContainer = $('#toast-container');
 const recentlyViewedContainer = $('#recently-viewed-container');
 const recentlyViewedList = $('#recently-viewed-list');
 
-// ─── Event Listeners ────────────────────────────────────────────────────────
+// â”€â”€â”€ Event Listeners â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 searchForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const q = searchInput.value.trim();
@@ -67,6 +318,11 @@ modalDownloadBtn.addEventListener('click', () => {
 });
 $('.modal-backdrop').addEventListener('click', closePlayer);
 
+$('#tiktok-login-btn').addEventListener('click', () => {
+  window.location.href = '/api/login';
+});
+
+
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !videoModal.classList.contains('hidden')) closePlayer();
 });
@@ -79,7 +335,7 @@ const scrollObserver = new IntersectionObserver((entries) => {
 }, { rootMargin: '200px' });
 scrollObserver.observe(scrollSentinel);
 
-// ─── Search Channel ─────────────────────────────────────────────────────────
+// â”€â”€â”€ Search Channel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function searchChannel(query) {
   searchError.classList.add('hidden');
   loadingOverlay.classList.remove('hidden');
@@ -129,7 +385,7 @@ async function searchChannel(query) {
   }
 }
 
-// ─── Display Channel ────────────────────────────────────────────────────────
+// â”€â”€â”€ Display Channel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function displayChannel(ch) {
   searchSection.classList.add('hidden');
   channelSection.classList.remove('hidden');
@@ -155,7 +411,7 @@ function displayChannel(ch) {
   window.scrollTo({ top: 0 });
 }
 
-// ─── Fetch Shorts ───────────────────────────────────────────────────────────
+// â”€â”€â”€ Fetch Shorts â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function fetchShorts(channelId, pageToken) {
   if (state.isLoading) return;
   state.isLoading = true;
@@ -199,7 +455,7 @@ async function fetchShorts(channelId, pageToken) {
           state.knownIds.add(video.id);
           shortsGrid.appendChild(createCard(video, false));
         }
-        // Notify for every item — dedup is handled inside ShortsNotifier
+        // Notify for every item â€” dedup is handled inside ShortsNotifier
         ShortsNotifier.notifyNewShort({
           id:          video.id,
           title:       video.snippet?.title || 'New Short',
@@ -233,7 +489,7 @@ async function fetchShorts(channelId, pageToken) {
   }
 }
 
-// ─── Load More (Infinite Scroll) ────────────────────────────────────────────
+// â”€â”€â”€ Load More (Infinite Scroll) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function loadMoreShorts() {
   if (!state.nextPageToken || state.isLoadingMore || !state.channel) return;
   state.isLoadingMore = true;
@@ -278,7 +534,7 @@ async function loadMoreShorts() {
   }
 }
 
-// ─── Polling Engine (30s) ───────────────────────────────────────────────────
+// â”€â”€â”€ Polling Engine (30s) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function startPolling(channelId) {
   stopPolling();
   state.pollingTimer = setInterval(() => checkForNewShorts(channelId), 30000);
@@ -321,7 +577,7 @@ async function checkForNewShorts(channelId) {
       showToast(`${newShorts.length} new Short${newShorts.length > 1 ? 's' : ''} detected!`, 'success');
     }
 
-    // Notify for every item in the response — dedup inside ShortsNotifier
+    // Notify for every item in the response â€” dedup inside ShortsNotifier
     data.items.forEach((video) => {
       ShortsNotifier.notifyNewShort({
         id:          video.id,
@@ -337,7 +593,7 @@ async function checkForNewShorts(channelId) {
   }
 }
 
-// ─── Create Short Card ──────────────────────────────────────────────────────
+// â”€â”€â”€ Create Short Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function createCard(video, isNew) {
   const card = document.createElement('div');
   card.className = `short-card${isNew ? ' new-card' : ''}`;
@@ -422,7 +678,7 @@ function createSkeleton() {
   return el;
 }
 
-// ─── Video Player (YouTube IFrame Embed — NO raw streams) ───────────────────
+// â”€â”€â”€ Video Player (YouTube IFrame Embed â€” NO raw streams) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function openPlayer(videoId, title) {
   state.activeVideoId = videoId;
   state.activeVideoTitle = title;
@@ -436,7 +692,7 @@ function openPlayer(videoId, title) {
     document.getElementById('modal-likes-count').textContent = likes;
   }
 
-  // Use official YouTube embed URL — include parameters for high quality
+  // Use official YouTube embed URL â€” include parameters for high quality
   modalPlayer.innerHTML = `<iframe
     src="https://www.youtube.com/embed/${videoId}?autoplay=1&loop=1&playlist=${videoId}&rel=0&modestbranding=1&vq=hd1080"
     allow="autoplay; encrypted-media; picture-in-picture"
@@ -454,7 +710,7 @@ function closePlayer() {
   document.body.style.overflow = '';
 }
 
-// ─── Download ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ Download â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function downloadVideo(videoId, title) {
   // Find and disable the download buttons (both grid card and modal)
   const gridBtn = document.querySelector(`.card-download-btn[data-video-id="${videoId}"]`);
@@ -469,12 +725,13 @@ async function downloadVideo(videoId, title) {
     modalBtn.querySelector('.action-icon').style.opacity = '0.5';
   }
 
-  showToast('Starting download — this may take a moment...', 'info');
+  showToast('Starting download â€” this may take a moment...', 'info');
 
   const performDownload = async (isRetry = false) => {
     // Ping health check before starting download
     try {
-      const healthRes = await fetch('/health', { method: 'GET' });
+      const healthRes = await fetch('/api/health', { method: 'GET' });
+
       if (!healthRes.ok) throw new Error('Offline');
     } catch (_) {
       throw new Error('Server is offline. Please try again later.');
@@ -554,7 +811,7 @@ async function downloadVideo(videoId, title) {
   }
 }
 
-// ─── Go Back ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Go Back â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function goBack() {
   stopPolling();
   state.channel = null;
@@ -573,7 +830,7 @@ function goBack() {
   history.pushState(null, '', '/');
 }
 
-// ─── Toast Notifications ────────────────────────────────────────────────────
+// â”€â”€â”€ Toast Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function showToast(message, type = 'info') {
   const icons = {
     error: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF4466" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>',
@@ -593,7 +850,7 @@ function showToast(message, type = 'info') {
   }, 4000);
 }
 
-// ─── Utility Functions ──────────────────────────────────────────────────────
+// â”€â”€â”€ Utility Functions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function formatCount(num) {
   const n = parseInt(num) || 0;
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1).replace(/\.0$/, '') + 'B';
@@ -640,7 +897,7 @@ function escapeAttr(str) {
 
 // Notification permission is now handled by ShortsNotifier.init()
 
-// ─── Live Stats Refresh ─────────────────────────────────────────────────────
+// â”€â”€â”€ Live Stats Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function refreshAllCardStats() {
   if (!state.channel) return;
   const controller = new AbortController();
@@ -694,11 +951,11 @@ async function refreshAllCardStats() {
       }
     });
   } catch (_) {
-    // Silent fail — stats refresh is non-critical
+    // Silent fail â€” stats refresh is non-critical
   }
 }
 
-// ─── Recently Viewed ────────────────────────────────────────────────────────
+// â”€â”€â”€ Recently Viewed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function saveToRecentlyViewed(ch) {
   try {
     const list = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
@@ -745,7 +1002,7 @@ function renderRecentlyViewed() {
           <span class="recent-name">${escapeHtml(ch.title)}</span>
           <span class="recent-handle">${escapeHtml(handleText)}</span>
         </div>
-        <button class="recent-remove" title="Remove">✕</button>
+        <button class="recent-remove" title="Remove">âœ•</button>
       `;
 
       card.addEventListener('click', () => {
@@ -776,7 +1033,7 @@ function removeFromRecentlyViewed(id) {
   }
 }
 
-// ─── History API — popstate (browser back/forward) ──────────────────────────
+// â”€â”€â”€ History API â€” popstate (browser back/forward) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 window.addEventListener('popstate', (event) => {
   if (event.state && event.state.channelQuery) {
     searchChannel(event.state.channelQuery);
@@ -785,7 +1042,7 @@ window.addEventListener('popstate', (event) => {
   }
 });
 
-// ─── Restore channel from URL on page load ──────────────────────────────────
+// â”€â”€â”€ Restore channel from URL on page load â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 document.addEventListener('DOMContentLoaded', () => {
   renderRecentlyViewed();
   const banner = document.createElement('div');
@@ -801,7 +1058,7 @@ document.addEventListener('DOMContentLoaded', () => {
   banner.style.zIndex = '9999';
   banner.style.fontWeight = '600';
   banner.style.display = 'none';
-  banner.textContent = '⚠️ Service is temporarily offline. Please try again later.';
+  banner.textContent = 'âš ï¸ Service is temporarily offline. Please try again later.';
   document.body.prepend(banner);
 
   let isOffline = false;
@@ -813,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const hideBanner = () => {
     if (isOffline) {
-      showToast('✅ Service restored', 'success');
+      showToast('âœ… Service restored', 'success');
       isOffline = false;
     }
     banner.style.display = 'none';

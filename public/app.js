@@ -1069,7 +1069,7 @@ document.addEventListener('DOMContentLoaded', () => {
   banner.style.zIndex = '9999';
   banner.style.fontWeight = '600';
   banner.style.display = 'none';
-  banner.textContent = 'âš ï¸ Service is temporarily offline. Please try again later.';
+  banner.textContent = '⚠️ Service is temporarily offline. Please try again later.';
   document.body.prepend(banner);
 
   let isOffline = false;
@@ -1081,31 +1081,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const hideBanner = () => {
     if (isOffline) {
-      showToast('âœ… Service restored', 'success');
+      showToast('✅ Service restored', 'success');
       isOffline = false;
     }
     banner.style.display = 'none';
   };
 
-  async function checkServerHealth() {
+
+  async function checkServerStatus() {
+
     const dot = document.getElementById('server-status-dot');
     const text = document.getElementById('server-status-text');
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const ping = await fetch('/api/status', { signal: controller.signal });
-      clearTimeout(timeout);
-      if (ping.ok) {
-        const data = await ping.json();
+      const res = await fetch('/api/status');
+      if (res.ok) {
+        const data = await res.json();
         if (data.online === true) {
+          // Hide the offline banner
+          const banner = document.querySelector(
+            '.offline-banner, #offline-banner, [class*="offline"]'
+          );
+          if (banner) banner.style.display = 'none';
+          
           if (dot) { dot.style.background = '#00FF88'; dot.style.boxShadow = '0 0 10px #00FF88'; }
           if (text) text.textContent = 'Online';
-          hideBanner();
+          
+          if (isOffline) {
+            showToast('✅ Service restored', 'success');
+            isOffline = false;
+          }
           return;
         }
       }
       throw new Error('not ok');
-    } catch {
+    } catch (e) {
+
       if (dot) { dot.style.background = '#FF4466'; dot.style.boxShadow = '0 0 10px #FF4466'; }
       if (text) text.textContent = 'Offline';
       showOfflineBanner();
@@ -1114,8 +1124,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Run immediately after 1 second, then every 30 seconds
-  setTimeout(checkServerHealth, 1000);
-  setInterval(checkServerHealth, 30000);
+  setTimeout(checkServerStatus, 1000);
+
+  setInterval(checkServerStatus, 30000);
+
 
   // TikTok Auth Check
   const params = new URLSearchParams(window.location.search);

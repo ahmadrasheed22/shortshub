@@ -172,8 +172,8 @@ async function fetchShorts(channelId, pageToken) {
   const timer = setTimeout(() => controller.abort(), 20000);
 
   try {
-    let url = '/api/shorts/' + channelId;
-    if (pageToken) url += '?pageToken=' + pageToken;
+    let url = '/api/shorts?channelId=' + channelId;
+    if (pageToken) url += '&pageToken=' + pageToken;
 
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timer);
@@ -243,7 +243,7 @@ async function loadMoreShorts() {
   const timer = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const res = await fetch('/api/shorts/' + state.channel.id + '?pageToken=' + state.nextPageToken, { signal: controller.signal });
+    const res = await fetch('/api/shorts?channelId=' + state.channel.id + '&pageToken=' + state.nextPageToken, { signal: controller.signal });
     clearTimeout(timer);
 
     if (!res.ok) {
@@ -301,7 +301,7 @@ async function checkForNewShorts(channelId) {
   const timer = setTimeout(() => controller.abort(), 20000);
 
   try {
-    const res = await fetch('/api/shorts/' + channelId, { signal: controller.signal });
+    const res = await fetch('/api/shorts?channelId=' + channelId, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
@@ -388,6 +388,7 @@ function createCard(video, isNew) {
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Download
       </button>
+      <button class="tiktok-share-btn" onclick="postToTikTok('https://www.youtube.com/shorts/${videoId}', '${escapeAttr(title)}')" style="background:#010101;color:white;border:none;padding:8px 14px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;margin-top:8px;width:100%;display:flex;align-items:center;justify-content:center;gap:6px;">🎵 Post to TikTok</button>
     </div>
   `;
 
@@ -474,7 +475,7 @@ async function downloadVideo(videoId, title) {
   const performDownload = async (isRetry = false) => {
     // Ping health check before starting download
     try {
-      const healthRes = await fetch('/health', { method: 'GET' });
+      const healthRes = await fetch('/api/status', { method: 'GET' });
       if (!healthRes.ok) throw new Error('Offline');
     } catch (_) {
       throw new Error('Server is offline. Please try again later.');
@@ -646,7 +647,7 @@ async function refreshAllCardStats() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
-    const res = await fetch('/api/shorts/' + state.channel.id, { signal: controller.signal });
+    const res = await fetch('/api/shorts?channelId=' + state.channel.id, { signal: controller.signal });
     clearTimeout(timer);
     if (!res.ok) return;
     const data = await res.json();
@@ -820,26 +821,24 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   async function checkServerHealth() {
-    const dot = document.getElementById('server-status-dot');
-    const text = document.getElementById('server-status-text');
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 5000);
-      const ping = await fetch('/health', { signal: controller.signal });
-      clearTimeout(timeout);
-      if (ping.ok) {
-        const data = await ping.json();
-        if (data.status === 'ok') {
-          if (dot) { dot.style.background = '#00FF88'; dot.style.boxShadow = '0 0 10px #00FF88'; }
-          if (text) text.textContent = 'Online';
-          hideBanner();
-          return;
-        }
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      if (data.online === true) {
+        document.getElementById('server-status-dot').style.background = '#00e676';
+        document.getElementById('server-status-dot').style.boxShadow = '0 0 10px #00e676';
+        document.getElementById('server-status-text').textContent = 'Online';
+        document.getElementById('server-status-text').style.color = '#00e676';
+        const offlineBanner = document.getElementById('offline-banner');
+        if (offlineBanner) offlineBanner.style.display = 'none';
+        hideBanner();
+        return;
       }
-      throw new Error('not ok');
-    } catch {
-      if (dot) { dot.style.background = '#FF4466'; dot.style.boxShadow = '0 0 10px #FF4466'; }
-      if (text) text.textContent = 'Offline';
+    } catch (e) {
+      document.getElementById('server-status-dot').style.background = '#ff1744';
+      document.getElementById('server-status-dot').style.boxShadow = '0 0 10px #ff1744';
+      document.getElementById('server-status-text').textContent = 'Offline';
+      document.getElementById('server-status-text').style.color = '#ff1744';
       showOfflineBanner();
     }
   }
@@ -854,3 +853,143 @@ document.addEventListener('DOMContentLoaded', () => {
     searchChannel(channelQuery);
   }
 });
+
+// ── TikTok Login ──────────────────────────────────
+function loginWithTikTok() {
+  fetch('/api/tiktok-login')
+    .then(r => r.json())
+    .then(data => {
+      if (data.authUrl) window.location.href = data.authUrl;
+    })
+    .catch(() => alert('TikTok login failed. Please try again.'));
+}
+
+// Check if user returned from TikTok login
+const urlParams = new URLSearchParams(window.location.search);
+const tiktokToken = urlParams.get('tiktok_token');
+if (tiktokToken) {
+  localStorage.setItem('tiktok_token', tiktokToken);
+  localStorage.setItem('tiktok_user', urlParams.get('tiktok_user') || '');
+  window.history.replaceState({}, '', '/');
+  const btn = document.getElementById('tiktok-login-btn');
+  if (btn) {
+    btn.innerHTML = '✅ TikTok Connected';
+    btn.style.background = '#00c853';
+  }
+}
+
+// Load saved TikTok session
+window.addEventListener('DOMContentLoaded', () => {
+  const savedToken = localStorage.getItem('tiktok_token');
+  const btn = document.getElementById('tiktok-login-btn');
+  if (savedToken && btn) {
+    btn.innerHTML = '✅ TikTok Connected';
+    btn.style.background = '#00c853';
+  }
+});
+
+// ── Post to TikTok ────────────────────────────────
+function postToTikTok(videoUrl, title) {
+  const token = localStorage.getItem('tiktok_token');
+  if (!token) {
+    alert('Please login with TikTok first!');
+    loginWithTikTok();
+    return;
+  }
+  const hashtags = '#YouTubeShorts #Shorts #FYP #ForYou #ForYouPage #Viral #Trending #NewVideo';
+  const caption = `${title} ${hashtags}`;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position:fixed;top:0;left:0;width:100%;height:100%;
+    background:rgba(0,0,0,0.85);z-index:99999;
+    display:flex;align-items:center;justify-content:center;
+  `;
+  modal.innerHTML = `
+    <div style="
+      background:#1a1a2e;border:1px solid rgba(255,255,255,0.15);
+      border-radius:16px;padding:28px;max-width:400px;
+      width:90%;color:white;text-align:center;
+    ">
+      <div style="font-size:36px;margin-bottom:12px;">🎵</div>
+      <h3 style="margin:0 0 8px;font-size:20px;">Post to TikTok</h3>
+      <p style="color:#aaa;font-size:13px;margin:0 0 16px;">
+        Your video will be posted automatically to your TikTok account.
+      </p>
+      <div style="
+        background:rgba(255,255,255,0.08);border-radius:8px;
+        padding:12px;font-size:12px;color:#ccc;
+        margin-bottom:16px;text-align:left;
+      ">
+        <strong style="color:white;display:block;margin-bottom:6px;">
+          Caption + Hashtags:
+        </strong>
+        ${caption}
+      </div>
+      <button onclick="
+        navigator.clipboard.writeText('${caption.replace(/'/g, "\\'")}');
+        this.textContent='✅ Copied!';
+        setTimeout(()=>this.textContent='📋 Copy Caption',1500);
+      " style="
+        width:100%;background:rgba(255,255,255,0.1);color:white;
+        border:1px solid rgba(255,255,255,0.2);padding:10px;
+        border-radius:8px;font-size:13px;cursor:pointer;margin-bottom:12px;
+      ">📋 Copy Caption</button>
+      <div style="display:flex;gap:10px;">
+        <button id="modal-cancel" style="
+          flex:1;background:rgba(255,255,255,0.1);color:white;
+          border:none;padding:12px;border-radius:8px;
+          font-size:14px;cursor:pointer;
+        ">Cancel</button>
+        <button id="modal-post" style="
+          flex:2;background:#010101;color:white;
+          border:1.5px solid rgba(255,255,255,0.2);padding:12px;
+          border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;
+        ">🎵 Post Now</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#modal-cancel').onclick = () => modal.remove();
+  modal.querySelector('#modal-post').onclick = () => {
+    const btn = modal.querySelector('#modal-post');
+    btn.textContent = '⏳ Posting...';
+    btn.disabled = true;
+    fetch('/api/tiktok-post', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ videoUrl, title, accessToken: token }),
+    })
+    .then(r => r.json())
+    .then(data => {
+      modal.remove();
+      if (data.error) {
+        showTikTokToast('❌ Failed: ' + data.error, '#ff1744');
+      } else {
+        showTikTokToast('✅ Posted to TikTok successfully!', '#00c853');
+      }
+    })
+    .catch(() => {
+      modal.remove();
+      showTikTokToast('❌ Something went wrong. Try again.', '#ff1744');
+    });
+  };
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+}
+
+function showTikTokToast(message, color) {
+  const t = document.createElement('div');
+  t.textContent = message;
+  t.style.cssText = `
+    position:fixed;bottom:30px;left:50%;
+    transform:translateX(-50%);
+    background:${color};color:white;
+    padding:14px 28px;border-radius:12px;
+    font-size:15px;font-weight:600;
+    z-index:99999;white-space:nowrap;
+    box-shadow:0 4px 20px rgba(0,0,0,0.4);
+  `;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}

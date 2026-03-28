@@ -45,6 +45,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
+// Also serve /api/status for frontend compatibility (Vercel uses this route)
+app.get('/api/status', (req, res) => {
+  res.json({ online: true, status: 'ok' });
+});
+
 function parseDuration(iso) {
   const m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
   if (!m) return 0;
@@ -151,8 +156,10 @@ app.get('/api/channel', async (req, res) => {
 // ─── API: Fetch Shorts ────────────────────────────────────────────────────
 // Uses playlistItems (1 unit) + videos.list (1 unit) = 2 units per call
 // Much cheaper than search.list (100 units)
-app.get('/api/shorts/:channelId', async (req, res) => {
-  const { channelId } = req.params;
+// Shared handler for both /api/shorts?channelId=X and /api/shorts/:channelId
+async function handleShortsRequest(req, res) {
+  // Support both query param (Vercel) and path param (Express) styles
+  const channelId = req.query.channelId || req.params.channelId;
   const { pageToken } = req.query;
 
   if (!channelId || !channelId.startsWith('UC')) {
@@ -205,7 +212,12 @@ app.get('/api/shorts/:channelId', async (req, res) => {
     const e = friendlyError(error);
     res.status(e.status).json({ error: e.error });
   }
-});
+}
+
+// Query param style: /api/shorts?channelId=UCxxx (used by frontend for Vercel compatibility)
+app.get('/api/shorts', handleShortsRequest);
+// Path param style: /api/shorts/UCxxx (legacy, still works locally)
+app.get('/api/shorts/:channelId', handleShortsRequest);
 
 // ─── API: Download via yt-dlp ──────────────────────────────────────────────
 app.get('/api/download/:videoId', async (req, res) => {

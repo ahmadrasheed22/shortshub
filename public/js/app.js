@@ -864,21 +864,37 @@ function loginWithTikTok() {
     .catch(() => alert('TikTok login failed. Please try again.'));
 }
 
-// Check if user returned from TikTok login
-const urlParams = new URLSearchParams(window.location.search);
-const tiktokToken = urlParams.get('tiktok_token');
-if (tiktokToken) {
-  localStorage.setItem('tiktok_token', tiktokToken);
-  localStorage.setItem('tiktok_user', urlParams.get('tiktok_user') || '');
-  window.history.replaceState({}, '', '/');
-  const btn = document.getElementById('tiktok-login-btn');
-  if (btn) {
-    btn.innerHTML = '✅ TikTok Connected';
-    btn.style.background = '#00c853';
-  }
-}
+(function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const tiktokToken = urlParams.get('tiktok_token');
+  const tiktokUser = urlParams.get('tiktok_user');
+  const tiktokError = urlParams.get('tiktok_error');
 
-// Load saved TikTok session
+  if (tiktokError) {
+    console.error('TikTok error:', decodeURIComponent(tiktokError));
+    window.history.replaceState({}, '', '/');
+    return;
+  }
+
+  if (tiktokToken) {
+    const decoded = decodeURIComponent(tiktokToken);
+    localStorage.setItem('tiktok_token', decoded);
+    localStorage.setItem(
+      'tiktok_user',
+      decodeURIComponent(tiktokUser || '')
+    );
+    window.history.replaceState({}, '', '/');
+    const btn = document.getElementById('tiktok-login-btn');
+    if (btn) {
+      btn.innerHTML = '✅ TikTok Connected';
+      btn.style.background = '#00c853';
+    }
+    setTimeout(() => {
+      alert('✅ TikTok account connected successfully!');
+    }, 500);
+  }
+})();
+
 window.addEventListener('DOMContentLoaded', () => {
   const savedToken = localStorage.getItem('tiktok_token');
   const btn = document.getElementById('tiktok-login-btn');

@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/channel", "destination": "/api/channel.js" },
+    { "source": "/api/shorts", "destination": "/api/shorts.js" },
+    { "source": "/api/shorts/:channelId", "destination": "/api/shorts.js" },
+    { "source": "/api/status", "destination": "/api/status.js" },
+    { "source": "/api/tiktok-login", "destination": "/api/tiktok-login.js" },
+    { "source": "/api/tiktok-post", "destination": "/api/tiktok-post.js" },
+    { "source": "/(.*)", "destination": "/public/$1" }
+  ]
+}

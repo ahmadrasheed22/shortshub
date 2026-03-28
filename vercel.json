@@ -6,6 +6,7 @@
     { "source": "/api/shorts/:channelId", "destination": "/api/shorts.js" },
     { "source": "/api/status", "destination": "/api/status.js" },
     { "source": "/api/tiktok-login", "destination": "/api/tiktok-login.js" },
+    { "source": "/api/callback", "destination": "/api/callback.js" },
     { "source": "/api/tiktok-post", "destination": "/api/tiktok-post.js" },
     { "source": "/(.*)", "destination": "/public/$1" }
   ]

@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { FormEvent, use, useCallback, useEffect, useRef, useState } from "react";
 import LiveMonitor from "@/components/LiveMonitor";
+import RecentlyViewed, { type StoredChannel } from "@/components/RecentlyViewed";
 import VideoCard, { VideoItem, formatCount } from "@/components/VideoCard";
 import VideoModal from "@/components/VideoModal";
 
@@ -27,6 +28,38 @@ type HomePageProps = {
 };
 
 type LiveStatus = "idle" | "connecting" | "live" | "reconnecting" | "error";
+
+function readStoredChannels(key: string): StoredChannel[] {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const saved = localStorage.getItem(key);
+    if (!saved) return [];
+
+    const parsed = JSON.parse(saved) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (item): item is StoredChannel =>
+        Boolean(item) &&
+        typeof item === "object" &&
+        typeof (item as StoredChannel).id === "string" &&
+        typeof (item as StoredChannel).title === "string"
+    );
+  } catch {
+    return [];
+  }
+}
+
+function toStoredChannel(channel: ChannelInfo): StoredChannel {
+  return {
+    id: channel.id,
+    title: channel.title,
+    thumbnail: channel.thumbnail,
+    customUrl: channel.customUrl,
+    subscriberCount: channel.subscriberCount,
+  };
+}
 
 function cleanApiErrorMessage(message: string) {
   return message
@@ -201,6 +234,8 @@ export default function HomePage({ searchParams }: HomePageProps) {
 
   const [query, setQuery] = useState("");
   const [channel, setChannel] = useState<ChannelInfo | null>(null);
+  const [isFavorite, setIsFavorite] = useState(false);
+  const [recentChannels, setRecentChannels] = useState<StoredChannel[]>([]);
   const [shorts, setShorts] = useState<VideoItem[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [searchError, setSearchError] = useState("");
@@ -216,9 +251,14 @@ export default function HomePage({ searchParams }: HomePageProps) {
   const showHero = !channel && (!hasUrlQuery || Boolean(searchError));
   const showUrlLoading = !channel && hasUrlQuery && !searchError;
 
+  useEffect(() => {
+    setRecentChannels(readStoredChannels("trueclip-recent"));
+  }, []);
+
   const resetToHero = useCallback(() => {
     setQuery("");
     setChannel(null);
+    setIsFavorite(false);
     setShorts([]);
     setNextPageToken(null);
     setSearchError("");
@@ -274,6 +314,50 @@ export default function HomePage({ searchParams }: HomePageProps) {
     [channel?.id]
   );
 
+  const checkFavorite = useCallback((channelId: string) => {
+    const favorites = readStoredChannels("trueclip-favorites");
+    return favorites.some((channelItem) => channelItem.id === channelId);
+  }, []);
+
+  const saveToRecent = useCallback((currentChannel: ChannelInfo) => {
+    const entry = toStoredChannel(currentChannel);
+    let recent = readStoredChannels("trueclip-recent");
+
+    recent = recent.filter((channelItem) => channelItem.id !== entry.id);
+    recent.unshift(entry);
+    recent = recent.slice(0, 6);
+
+    localStorage.setItem("trueclip-recent", JSON.stringify(recent));
+    setRecentChannels(recent);
+  }, []);
+
+  const removeRecentChannel = useCallback((channelId: string) => {
+    const updated = readStoredChannels("trueclip-recent").filter(
+      (channelItem) => channelItem.id !== channelId
+    );
+    localStorage.setItem("trueclip-recent", JSON.stringify(updated));
+    setRecentChannels(updated);
+  }, []);
+
+  const toggleFavorite = useCallback(() => {
+    if (!channel) return;
+
+    const entry = toStoredChannel(channel);
+    let favorites = readStoredChannels("trueclip-favorites");
+
+    if (isFavorite) {
+      favorites = favorites.filter((channelItem) => channelItem.id !== entry.id);
+      setIsFavorite(false);
+    } else {
+      favorites = favorites.filter((channelItem) => channelItem.id !== entry.id);
+      favorites.unshift(entry);
+      setIsFavorite(true);
+    }
+
+    localStorage.setItem("trueclip-favorites", JSON.stringify(favorites));
+    window.dispatchEvent(new Event("trueclip-favorites-updated"));
+  }, [channel, isFavorite]);
+
   const loadChannelByQuery = useCallback(
     async (searchValue: string) => {
       setIsSearching(true);
@@ -284,6 +368,7 @@ export default function HomePage({ searchParams }: HomePageProps) {
       setHasRequestedShorts(false);
       setLiveStatus("idle");
       setNewShortsQueue([]);
+      setIsFavorite(false);
 
       try {
         const response = await fetch(`/api/channel?q=${encodeURIComponent(searchValue)}`);
@@ -302,16 +387,35 @@ export default function HomePage({ searchParams }: HomePageProps) {
         }
 
         setChannel(normalized);
+        setIsFavorite(checkFavorite(normalized.id));
+        saveToRecent(normalized);
         await fetchShorts(undefined, normalized.id);
       } catch (error) {
         setChannel(null);
+        setIsFavorite(false);
         const message = error instanceof Error ? error.message : "";
         setSearchError(mapChannelErrorToUi(message));
       } finally {
         setIsSearching(false);
       }
     },
-    [fetchShorts]
+    [checkFavorite, fetchShorts, saveToRecent]
+  );
+
+  const handleSelectChannel = useCallback(
+    (channelBasic: StoredChannel) => {
+      const targetQuery = channelBasic.id;
+      setQuery(targetQuery);
+
+      if (targetQuery === normalizedUrlQuery) {
+        lastLoadedQueryRef.current = targetQuery;
+        void loadChannelByQuery(targetQuery);
+        return;
+      }
+
+      router.push(`/?q=${encodeURIComponent(targetQuery)}`);
+    },
+    [loadChannelByQuery, normalizedUrlQuery, router]
   );
 
   const handleIncomingShort = useCallback((video: unknown) => {
@@ -367,6 +471,11 @@ export default function HomePage({ searchParams }: HomePageProps) {
     lastLoadedQueryRef.current = normalizedUrlQuery;
     void loadChannelByQuery(normalizedUrlQuery);
   }, [loadChannelByQuery, normalizedUrlQuery, resetToHero]);
+
+  useEffect(() => {
+    if (!channel) return;
+    setIsFavorite(checkFavorite(channel.id));
+  }, [channel, checkFavorite]);
 
   return (
     <main className="page-root">
@@ -448,6 +557,12 @@ export default function HomePage({ searchParams }: HomePageProps) {
               </button>
             </form>
 
+            <RecentlyViewed
+              channels={recentChannels}
+              onSelectChannel={handleSelectChannel}
+              onRemoveChannel={removeRecentChannel}
+            />
+
             {searchError ? <p className="inline-error">{searchError}</p> : null}
           </section>
         ) : showUrlLoading ? (
@@ -487,6 +602,16 @@ export default function HomePage({ searchParams }: HomePageProps) {
                   <span className="stat-pill">
                     {"\u{1F441}"} {formatCount(channel.viewCount)} views
                   </span>
+                </div>
+
+                <div className="channel-actions">
+                  <button
+                    type="button"
+                    onClick={toggleFavorite}
+                    className={`favorite-btn ${isFavorite ? "active" : ""}`}
+                  >
+                    {isFavorite ? "\u2605 Favorited" : "\u2606 Add to Favorites"}
+                  </button>
                 </div>
               </div>
 

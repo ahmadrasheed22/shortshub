@@ -98,6 +98,7 @@ export default function VideoModal({
           {/* YouTube embed iframe */}
           <iframe
             src={`https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&controls=1&rel=0&modestbranding=1&playsinline=1`}
+            title={title}
             style={{ width: '100%', height: '100%', border: 'none' }}
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen

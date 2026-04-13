@@ -159,7 +159,7 @@ export async function GET(request: NextRequest) {
       await checkForNewShorts();
       checkInterval = setInterval(() => {
         void checkForNewShorts();
-      }, 10000);
+      }, 30000);
 
       request.signal.addEventListener("abort", () => {
         closeStream();

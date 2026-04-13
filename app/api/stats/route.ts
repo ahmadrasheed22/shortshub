@@ -3,6 +3,19 @@ import { isVideoId, YouTubeApiError, youtubeApiGet } from "@/lib/youtube";
 
 export const dynamic = "force-dynamic";
 
+const STATS_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type CachedStats = {
+  expiresAt: number;
+  payload: {
+    viewCount: string;
+    likeCount: string;
+    publishedAt: string;
+  };
+};
+
+const statsCache = new Map<string, CachedStats>();
+
 type VideoStats = {
   statistics?: {
     viewCount?: string;
@@ -33,6 +46,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid video ID" }, { status: 400 });
   }
 
+  const cached = statsCache.get(videoId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return NextResponse.json(cached.payload);
+  }
+
   try {
     const data = await youtubeApiGet<VideosListResponse>("videos", {
       part: "statistics,snippet",
@@ -46,12 +64,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
 
-    return NextResponse.json({
+    const payload = {
       viewCount: item.statistics?.viewCount ?? "0",
       likeCount: item.statistics?.likeCount ?? "0",
       publishedAt: item.snippet?.publishedAt ?? "",
+    };
+
+    statsCache.set(videoId, {
+      payload,
+      expiresAt: Date.now() + STATS_CACHE_TTL_MS,
     });
+
+    return NextResponse.json(payload);
   } catch (error) {
+    if (cached) {
+      return NextResponse.json(cached.payload);
+    }
+
     return toErrorResponse(error);
   }
 }

@@ -148,6 +148,17 @@ async function resolveChannel(input: string): Promise<YouTubeChannel | null> {
     }
   }
 
+  // Try handle resolution first for plain single-token input to avoid expensive search API calls.
+  if (hint.searchText) {
+    const maybeHandle = hint.searchText.trim().replace(/^@/, "");
+    if (maybeHandle && !/\s/.test(maybeHandle)) {
+      const channel = await fetchChannelByHandle(maybeHandle);
+      if (channel) {
+        return channel;
+      }
+    }
+  }
+
   const fallbackSearches = [hint.searchText, input.trim()].filter(
     (value, index, all) => Boolean(value) && all.indexOf(value) === index
   ) as string[];

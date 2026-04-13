@@ -28,6 +28,34 @@ type HomePageProps = {
 
 type LiveStatus = "idle" | "connecting" | "live" | "reconnecting" | "error";
 
+function cleanApiErrorMessage(message: string) {
+  return message
+    .replace(/<[^>]*>/g, "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .trim();
+}
+
+function mapChannelErrorToUi(message: string) {
+  const cleaned = cleanApiErrorMessage(message);
+  const normalized = cleaned.toLowerCase();
+
+  if (normalized.includes("quota")) {
+    return "YouTube API quota exceeded for today. Please try again later or switch to a new API key.";
+  }
+
+  if (normalized.includes("api key") || normalized.includes("forbidden") || normalized.includes("permission")) {
+    return "YouTube API key is invalid or restricted. Update YOUTUBE_API_KEY and try again.";
+  }
+
+  if (normalized.includes("not found") || normalized.includes("channel")) {
+    return "Unable to find that channel. Try a channel name, @handle, or URL.";
+  }
+
+  return cleaned || "Unable to load channel right now. Please try again.";
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") return null;
   return value as Record<string, unknown>;
@@ -260,7 +288,10 @@ export default function HomePage({ searchParams }: HomePageProps) {
       try {
         const response = await fetch(`/api/channel?q=${encodeURIComponent(searchValue)}`);
         if (!response.ok) {
-          throw new Error("Channel fetch failed");
+          const errorPayload = (await response.json().catch(() => null)) as
+            | { error?: string }
+            | null;
+          throw new Error(errorPayload?.error ?? "Channel fetch failed");
         }
 
         const payload = await response.json();
@@ -272,11 +303,10 @@ export default function HomePage({ searchParams }: HomePageProps) {
 
         setChannel(normalized);
         await fetchShorts(undefined, normalized.id);
-      } catch {
+      } catch (error) {
         setChannel(null);
-        setSearchError(
-          "Unable to find that channel. Try a channel name, @handle, or URL."
-        );
+        const message = error instanceof Error ? error.message : "";
+        setSearchError(mapChannelErrorToUi(message));
       } finally {
         setIsSearching(false);
       }
